@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
@@ -9,17 +7,38 @@ services:
       - "6379:6379"
     volumes:
       - redisdata:/data
-    networks:
-      - shared-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  backend:
+    build: ./backend
+    container_name: shorts100_backend
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - TZ=Asia/Seoul
+    networks:
+      - default
+      - shared-network # 기존 DB가 속한 네트워크 이름
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   redisdata:
 
 networks:
+  default:
+    name: shorts100_network
   shared-network:
     external: true
