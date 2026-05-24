@@ -1,0 +1,1 @@
+// types/ranking.ts로 이동됨

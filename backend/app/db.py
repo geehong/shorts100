@@ -3,8 +3,15 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import DeclarativeBase
 from .config import settings
 
-# 비동기 DB 엔진 생성 (SQL 실행 로그 출력을 위해 echo=True 설정)
-engine = create_async_engine(settings.DATABASE_URL, echo=True)
+# 비동기 DB 엔진 생성 (커넥션 풀 설정 최적화 및 echo=False 설정)
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
 
 # 비동기 세션 팩토리 생성
 AsyncSessionLocal = async_sessionmaker(

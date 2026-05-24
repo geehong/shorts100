@@ -1,0 +1,29 @@
+{
+  "common": {
+    "rank": "{n}위",
+    "views": "조회수 {count}",
+    "likes": "좋아요 {count}",
+    "openInApp": "앱에서 열기"
+  },
+  "main": {
+    "title": "오늘의 쇼츠 TOP 100",
+    "subtitle": "지금 가장 핫한 숏폼 영상 모음"
+  },
+  "rising": {
+    "title": "주목할 신인 크리에이터",
+    "subtitle": "빠르게 성장 중인 채널들"
+  },
+  "cookie": {
+    "title": "쿠키 사용 동의",
+    "description": "Shorts100은 서비스 운영을 위해 쿠키를 사용합니다.",
+    "essentialOnly": "필수만 허용",
+    "acceptAll": "모두 동의",
+    "decline": "거부",
+    "analytics": "분석 쿠키",
+    "advertising": "광고 쿠키"
+  },
+  "errors": {
+    "loadFailed": "데이터를 불러오지 못했습니다.",
+    "retry": "다시 시도"
+  }
+}

@@ -1,0 +1,1 @@
+# Redundant: API entry point is in backend/app/main.py

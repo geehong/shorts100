@@ -1,0 +1,1 @@
+// components/RankingList.tsx로 이동됨

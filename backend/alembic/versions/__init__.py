@@ -1,0 +1,1 @@
+# Alembic versions should not be a package with an init file

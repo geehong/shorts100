@@ -1,0 +1,1 @@
+// Moved: This file should be at /frontend/app/rising/page.tsx

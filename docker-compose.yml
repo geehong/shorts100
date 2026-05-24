@@ -7,6 +7,8 @@ services:
       - "6379:6379"
     volumes:
       - redisdata:/data
+    networks:
+      - shorts100_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -18,6 +20,10 @@ services:
     container_name: shorts100_backend
     ports:
       - "8002:8000"
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    command: /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
     env_file:
       - .env
     depends_on:
@@ -25,20 +31,79 @@ services:
         condition: service_healthy
     environment:
       - TZ=Asia/Seoul
+      - PATH=/app/.venv/bin:$$PATH
     networks:
-      - default
-      - shared-network # 기존 DB가 속한 네트워크 이름
+      shorts100_network:
+      shared-network:
+        aliases:
+          - shorts100-be
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "/app/.venv/bin/python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  worker:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    command: /app/.venv/bin/celery -A app.celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - TZ=Asia/Seoul
+      - PATH=/app/.venv/bin:$$PATH
+    networks:
+      shorts100_network:
+      shared-network:
+    mem_limit: 512m
+    restart: unless-stopped
+
+  celery-beat:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    command: /app/.venv/bin/celery -A app.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - TZ=Asia/Seoul
+      - PATH=/app/.venv/bin:$$PATH
+    networks:
+      shorts100_network:
+      shared-network:
+    mem_limit: 256m
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=https://shorts100.firemarkets.net
+      - BACKEND_API_URL=http://shorts100-be:8000
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      shorts100_network:
+      shared-network:
+        aliases:
+          - shorts100-fe
 
 volumes:
   redisdata:
 
 networks:
-  default:
-    name: shorts100_network
+  shorts100_network: {}
   shared-network:
     external: true

@@ -1,0 +1,1 @@
+# Documentation example only. Actual implementation is in app/core/cache.py.

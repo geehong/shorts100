@@ -140,3 +140,10 @@ docker-compose.override.yml
 .env.production.local
 *.env
 !*.env.example
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Claude
+.claude/
