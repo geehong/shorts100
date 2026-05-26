@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from typing import List
 
 from .db import get_db
-from app.models import Video, Ranking, VideoStat
+from app.models import Video, Ranking, VideoStat, Channel
 from .schemas import VideoResponse
 from .core.cache import cache
 from .config import settings
@@ -88,6 +88,56 @@ async def get_videos(
     result = await db.execute(query)
     videos = result.scalars().all()
     return videos
+
+@app.get("/api/videos/search")
+async def search_videos(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    영상 제목, 설명, 채널명 검색 API
+    """
+    from sqlalchemy import or_
+    
+    search_pattern = f"%{q}%"
+    query = (
+        select(Video)
+        .join(Video.channel)
+        .options(selectinload(Video.channel))
+        .where(Video.is_short == True)
+        .where(Video.safety_status.notin_(["hidden", "banned"]))
+        .where(
+            or_(
+                Video.title.ilike(search_pattern),
+                Video.description.ilike(search_pattern),
+                Channel.title.ilike(search_pattern)
+            )
+        )
+        .order_by(Video.view_count.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(query)
+    videos = result.scalars().all()
+    
+    items = []
+    for i, v in enumerate(videos):
+        items.append({
+            "id": v.id,
+            "title": v.title,
+            "channel_title": v.channel.title,
+            "thumbnail_url": v.thumbnail_url,
+            "view_count": v.view_count,
+            "like_count": v.like_count,
+            "score": float(v.view_count),
+            "position": offset + i + 1,
+            "platform_video_id": v.platform_video_id,
+            "category": v.category.value if v.category else None,
+            "published_at": v.published_at.isoformat() if v.published_at else None,
+        })
+    return items
 
 @app.get("/api/videos/{video_id}", response_model=VideoResponse)
 async def get_video(

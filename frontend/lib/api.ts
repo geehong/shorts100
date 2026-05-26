@@ -57,3 +57,19 @@ export async function fetchVideoDetail(id: string) {
     return null;
   }
 }
+
+// client-side search
+export async function searchVideosClient(
+  q: string,
+  limit: number,
+  offset: number
+): Promise<RankingItem[]> {
+  const params = new URLSearchParams();
+  params.set("q", q);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+
+  const res = await fetch(`${CLIENT_API}/api/videos/search?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}

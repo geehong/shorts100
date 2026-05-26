@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { buildYouTubeDeepLink, openDeepLink } from "@/lib/deeplink";
+import { fetchRankingsClient } from "@/lib/api";
 
 interface ChannelData {
   title: string;
@@ -36,10 +37,156 @@ function fmt(n: number) {
 
 export default function VideoDetailClient({ video }: { video: VideoData }) {
   const router = useRouter();
+  const params = useParams();
+  const locale = (params?.locale as string) || "ko";
+
   const [showDesc, setShowDesc] = useState(false);
+  const [videoIds, setVideoIds] = useState<number[]>([]);
+  const [overlayHidden, setOverlayHidden] = useState(false);
+
+  // touch refs
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const isNavigating = useRef(false);
+  const wheelCooldown = useRef(false);
+
+  // Load video IDs from sessionStorage, with localStorage filters fallback
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("s100_current_ids");
+      if (stored) {
+        setVideoIds(JSON.parse(stored));
+        return;
+      }
+    } catch (e) {}
+
+    const loadFallback = async () => {
+      try {
+        const saved = localStorage.getItem("s100_filters");
+        let region = "";
+        let cat = "";
+        let period = "realtime" as any;
+        let rankBasis = "algo";
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          region = parsed.region ?? "";
+          cat = parsed.cat ?? "";
+          period = parsed.period ?? "realtime";
+          rankBasis = parsed.rankBasis ?? "algo";
+        }
+        const data = await fetchRankingsClient("global", 100, 0, period, region, cat, rankBasis);
+        setVideoIds(data.map((item: any) => item.id));
+      } catch (err) {}
+    };
+    loadFallback();
+  }, []);
+
+  const currentIndex = videoIds.indexOf(video.id);
+  const nextVideoId = currentIndex !== -1 && currentIndex < videoIds.length - 1 ? videoIds[currentIndex + 1] : null;
+  const prevVideoId = currentIndex > 0 ? videoIds[currentIndex - 1] : null;
+
+  const navigateTo = (targetId: number | "main") => {
+    if (isNavigating.current) return;
+    isNavigating.current = true;
+    if (targetId === "main") {
+      router.push(`/${locale}`);
+    } else {
+      router.push(`/${locale}/v/${targetId}`);
+    }
+    // Release navigation lock
+    setTimeout(() => {
+      isNavigating.current = false;
+    }, 800);
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA") {
+        return;
+      }
+      switch (e.key) {
+        case "ArrowDown":
+        case "ArrowLeft":
+          // 하위 순위 → 마지막이면 리스트
+          if (nextVideoId) navigateTo(nextVideoId); else navigateTo("main");
+          break;
+        case "ArrowUp":
+        case "ArrowRight":
+          // 상위 순위 → 1위면 리스트
+          if (prevVideoId) navigateTo(prevVideoId); else navigateTo("main");
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [nextVideoId, prevVideoId, locale]);
+
+  // 휠 스크롤 (데스크탑)
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (wheelCooldown.current) return;
+      if (Math.abs(e.deltaY) < 60) return;
+      wheelCooldown.current = true;
+      setTimeout(() => { wheelCooldown.current = false; }, 1000);
+      if (e.deltaY > 0) {
+        // 아래 스크롤 → 하위 순위 (11위)
+        if (nextVideoId) navigateTo(nextVideoId); else navigateTo("main");
+      } else {
+        // 위 스크롤 → 상위 순위 (9위), 1위면 리스트
+        if (prevVideoId) navigateTo(prevVideoId); else navigateTo("main");
+      }
+    };
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, [nextVideoId, prevVideoId, locale]);
+
+  // Touch handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const diffX = e.changedTouches[0].clientX - touchStartX.current;
+    const diffY = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+
+    const H_THRESHOLD = 60;   // 수평 스와이프 최소 픽셀
+    const V_THRESHOLD = 100;  // 수직 스와이프 최소 픽셀 (텍스트 스크롤과 구분)
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      // 수평 스와이프
+      if (Math.abs(diffX) > H_THRESHOLD) {
+        if (diffX < 0) {
+          // 좌측 스와이프 → 다음(하위) 순위 상세
+          if (nextVideoId) navigateTo(nextVideoId); else navigateTo("main");
+        } else {
+          // 우측 스와이프 → 순위 리스트
+          navigateTo("main");
+        }
+      }
+    } else {
+      // 수직 스와이프 (큰 스와이프만 인식해 텍스트 스크롤과 충돌 방지)
+      if (Math.abs(diffY) > V_THRESHOLD) {
+        if (diffY > 0) {
+          // 아래 스와이프 → 상위 순위 (9위), 1위면 리스트
+          if (prevVideoId) navigateTo(prevVideoId); else navigateTo("main");
+        } else {
+          // 위 스와이프 → 하위 순위 (11위), 마지막이면 리스트
+          if (nextVideoId) navigateTo(nextVideoId); else navigateTo("main");
+        }
+      }
+    }
+  };
 
   const handleBack = () => {
-    // 이전 페이지로 가기 또는 홈으로 이동
     if (window.history.length > 1) {
       router.back();
     } else {
@@ -72,24 +219,58 @@ export default function VideoDetailClient({ video }: { video: VideoData }) {
   const catBg = catColors[video.category || ""] || "from-slate-600 to-slate-700 text-slate-100";
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pt-4 pb-24">
+    <div 
+      onTouchStart={handleTouchStart} 
+      onTouchEnd={handleTouchEnd}
+      className="max-w-2xl mx-auto px-4 pt-4 pb-24 min-h-screen select-none"
+    >
       {/* ── 상단 헤더 ── */}
-      <header className="flex items-center justify-between mb-5">
-        <button
-          onClick={handleBack}
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white transition-all"
-        >
-          <span className="text-lg">←</span>
-        </button>
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          쇼츠 상세 분석
-        </span>
-        <div className="w-10 h-10" /> {/* Balance spacer */}
+      <header className="flex flex-col items-center gap-2 mb-5">
+        <div className="flex items-center justify-between w-full">
+          <button
+            onClick={handleBack}
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white transition-all shadow-md"
+          >
+            <span className="text-lg">←</span>
+          </button>
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            쇼츠 상세 분석
+          </span>
+          <div className="w-10 h-10" /> {/* Balance spacer */}
+        </div>
+        
+        {/* 순위 네비게이터 */}
+        <div className="flex items-center gap-2 mt-1">
+          {/* 상위 순위 버튼 */}
+          <button
+            onClick={() => prevVideoId ? navigateTo(prevVideoId) : navigateTo("main")}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-700 text-slate-300 text-[10px] font-bold active:scale-95 transition-all"
+          >
+            <span>↑</span>
+            <span>{currentIndex > 0 ? `${currentIndex}위` : "리스트"}</span>
+          </button>
+
+          {/* 현재 순위 뱃지 */}
+          <div className="flex-1 flex justify-center">
+            <span className="px-3 py-1.5 rounded-full bg-violet-600/80 text-white text-[10px] font-black border border-violet-500/50">
+              {currentIndex !== -1 ? `${currentIndex + 1}위` : "—"}
+            </span>
+          </div>
+
+          {/* 하위 순위 버튼 */}
+          <button
+            onClick={() => nextVideoId ? navigateTo(nextVideoId) : navigateTo("main")}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-700 text-slate-300 text-[10px] font-bold active:scale-95 transition-all"
+          >
+            <span>{nextVideoId ? `${currentIndex + 2}위` : "리스트"}</span>
+            <span>↓</span>
+          </button>
+        </div>
       </header>
 
       {/* ── 비디오 임베드 플레이어 ── */}
       <div className="flex justify-center mb-6">
-        <div className="relative w-full max-w-[320px] aspect-[9/16] rounded-3xl overflow-hidden bg-slate-900 border-2 border-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.6)]">
+        <div className="relative w-full max-w-[320px] aspect-[9/16] rounded-3xl overflow-hidden bg-slate-900 border-2 border-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.6)] group">
           <iframe
             src={`https://www.youtube.com/embed/${video.platform_video_id}?autoplay=0&rel=0`}
             title={video.title}
@@ -97,6 +278,33 @@ export default function VideoDetailClient({ video }: { video: VideoData }) {
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
           />
+          {/* 터치 스와이프 및 유튜브 앱 연결 오버레이 */}
+          {!overlayHidden && (
+            <div
+              onClick={() => setOverlayHidden(true)}
+              className="absolute inset-0 bg-black/20 hover:bg-black/35 flex flex-col items-center justify-center cursor-pointer transition-all z-10"
+            >
+              <button 
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  handleOpenYouTube();
+                }}
+                className="w-16 h-16 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110 active:scale-95 border border-red-500/20"
+                title="유튜브 앱에서 재생"
+              >
+                <span className="text-2xl pl-1 text-white">▶</span>
+              </button>
+              
+              <div className="mt-4 flex flex-col items-center gap-1.5 px-4 text-center">
+                <span className="text-[10px] text-white font-extrabold bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-xs shadow-md border border-white/5">
+                  유튜브 앱에서 시청하기 (클릭)
+                </span>
+                <span className="text-[9.5px] text-slate-300 font-medium bg-slate-950/65 px-3 py-1 rounded-full backdrop-blur-xs border border-white/5">
+                  여기를 탭하면 웹에서 재생 / 스와이프하여 이동
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
