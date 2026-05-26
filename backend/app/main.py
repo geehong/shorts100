@@ -255,20 +255,40 @@ async def _get_ranking_list(
     from app.services.ranking import calculate_z_score, calculate_decay, compute_final_score, compute_rising_score
 
     # GLOBAL 뷰 언어별 랭킹 가중치 (높을수록 상위 노출 유리)
-    # 영어 > 한국어 > 일본어 > 프랑스어 > 스페인어 > 포르투갈어 = 나머지
     _LANG_WEIGHT: dict[str, float] = {
         "en": 1.00,  # 영어
         "ko": 0.85,  # 한국어
         "ja": 0.70,  # 일본어
         "fr": 0.55,  # 프랑스어
         "es": 0.45,  # 스페인어
-        # 포르투갈어 = 나머지 (기본값 0.30으로 처리)
+        "pt": 0.35,  # 포르투갈어
+        "hi": 0.12,  # 힌디 (인도)
+        "id": 0.12,  # 인도네시아
+        "ur": 0.10,  # 우르두 (파키스탄)
+        "bn": 0.10,  # 벵갈리
+        "ta": 0.10,  # 타밀
+        "te": 0.10,  # 텔루구
+        "mr": 0.10,  # 마라티
     }
-    _DEFAULT_WEIGHT = 0.30  # pt 포함 나머지 모든 언어
+    _DEFAULT_WEIGHT = 0.20  # 나머지 언어
     def _lang_weight(v) -> float:
+        import re
         if region:   # 지역 탭 선택 시엔 가중치 없음
             return 1.0
         lang = (v.default_language or "")[:2].lower()
+        title = v.title or ""
+        # 제목에 남아시아 문자가 포함되면 실제 언어 기준으로 낮은 가중치 적용
+        # (YouTube가 en-IN 등으로 잘못 태깅하는 경우 대응)
+        if re.search(r'[\u0900-\u097F]', title):  # 데바나가리 (힌디/마라티/네팔어)
+            return 0.12
+        if re.search(r'[\u0980-\u09FF]', title):  # 벵갈리
+            return 0.10
+        if re.search(r'[\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]', title):  # 타밀/텔루구/칸나다/말라얄람
+            return 0.10
+        if re.search(r'[\u0600-\u06FF]', title):  # 아랍/우르두
+            return 0.10
+        if re.search(r'[\u0E00-\u0E7F\u1000-\u109F]', title):  # 태국/미얀마
+            return 0.15
         return _LANG_WEIGHT.get(lang, _DEFAULT_WEIGHT)
 
     if rank_basis == "view_delta":
@@ -345,7 +365,8 @@ async def _get_ranking_list(
             })
         return items
 
-    if rank_basis == "view_count":
+    if rank_basis == "view_count" and region:
+        # 나라별: 가중치 없이 순수 조회수 정렬
         query = query.order_by(Video.view_count.desc()).limit(limit).offset(offset)
         videos = (await db.execute(query)).scalars().all()
     else:
@@ -508,17 +529,19 @@ async def get_charts(
     }
     pub_cutoff = datetime.now(timezone.utc) - _PUB_WINDOWS.get(chart_type, timedelta(days=30))
 
-    # 1. period_key가 없으면 최신 유효 period_key 조회 (오래된 차트 제외)
+    # 1. period_key가 없으면 최신 유효 period_key 조회 (region별로 찾아야 함)
     if not period_key:
-        latest_stmt = (
-            select(ChartEntry.period_key)
-            .where(ChartEntry.chart_type == chart_type)
-            .where(ChartEntry.created_at >= staleness_cutoff)
-            .order_by(ChartEntry.created_at.desc())
-            .limit(1)
-        )
-        latest_res = await db.execute(latest_stmt)
-        period_key = latest_res.scalar_one_or_none()
+        # region이 지정된 경우 해당 region 기준으로 최신 period_key 검색
+        # (region마다 수집 시점이 달라 전체 최신 period_key를 쓰면 특정 region이 빈결과 됨)
+        lookup_region = region.upper() if region and region.upper() != "GLOBAL" else None
+        pk_stmt = select(ChartEntry.period_key).where(
+            ChartEntry.chart_type == chart_type
+        ).where(ChartEntry.created_at >= staleness_cutoff)
+        if lookup_region:
+            pk_stmt = pk_stmt.where(ChartEntry.region == lookup_region)
+        pk_stmt = pk_stmt.order_by(ChartEntry.created_at.desc()).limit(1)
+        pk_res = await db.execute(pk_stmt)
+        period_key = pk_res.scalar_one_or_none()
 
     if not period_key:
         return []

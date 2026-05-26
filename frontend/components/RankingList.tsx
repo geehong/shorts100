@@ -77,10 +77,10 @@ const T: any = {
       all: "전체"
     },
     rankBases: {
-      algo: "종합 순위",
-      view_count: "조회수 순",
-      view_delta: "증가량 순",
-      rising: "급상승 순"
+      algo: "스코어",
+      view_count: "뷰",
+      view_delta: "그로스",
+      rising: "뉴"
     },
     peak: "최고",
     weeksOnChart: "주째"
@@ -125,10 +125,10 @@ const T: any = {
       all: "All"
     },
     rankBases: {
-      algo: "Score Rank",
-      view_count: "Views Rank",
-      view_delta: "Growth Rank",
-      rising: "Rising Rank"
+      algo: "Score",
+      view_count: "View",
+      view_delta: "Growth",
+      rising: "New"
     },
     peak: "Peak",
     weeksOnChart: "w on chart"
@@ -414,7 +414,7 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
           { key: "algo",       icon: "🏆" },
           { key: "view_count", icon: "👁" },
           { key: "view_delta", icon: "📈" },
-          { key: "rising",     icon: "⚡" }
+          { key: "rising",     icon: "🆕" }
         ].map(rb => (
           <button key={rb.key} onClick={() => setRankBasis(rb.key)}
             style={{ boxShadow: rankBasis === rb.key ? SHA : SH }}
