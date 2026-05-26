@@ -906,12 +906,12 @@ def _save_chart_entries_for_collection(
 
     from app.services.ranking import apply_region_filter
 
-    cutoff = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    cutoff = period_start
     stmt = (
         select(Video)
         .where(Video.platform_video_id.in_(all_ids))
         .where(Video.status == "active")
-        .where(Video.published_at >= cutoff)  # 퍼블리싱 기준 필터 (2025년 이전 오래된 바이럴 영상 제외)
+        .where(Video.published_at >= cutoff)
     )
     stmt = apply_region_filter(stmt, region)
     stmt = stmt.order_by(Video.view_count.desc())
@@ -1081,8 +1081,8 @@ def collect_realtime_shorts():
 
     now_utc = datetime.now(timezone.utc)
     period_start = now_utc - timedelta(hours=2)
-    # 수집 시에는 최근 7일 이내 업로드된 인기 영상을 넓게 긁어옵니다.
-    search_published_after = now_utc - timedelta(days=7)
+    # API 인덱싱 지연(최대 ~2h) 보정: 6시간 버퍼로 넓게 검색 후 Python에서 재필터링
+    search_published_after = now_utc - timedelta(hours=6)
     kst_hour = (now_utc + timedelta(hours=9)).strftime("%Y-%m-%dT%H")
     regions = get_collection_regions()
 
@@ -1091,6 +1091,17 @@ def collect_realtime_shorts():
         video_items, all_ids = _collect_two_pages(client, region, search_published_after)
         if not all_ids:
             continue
+
+        # period_start 이전 발행 영상 제거 후 조회수 내림차순 정렬
+        video_items = sorted(
+            [item for item in video_items if item.get("published_at") and item["published_at"] >= period_start],
+            key=lambda x: x.get("view_count", 0),
+            reverse=True,
+        )
+        all_ids = [item["platform_video_id"] for item in video_items]
+        if not all_ids:
+            continue
+
         with SyncSession() as session:
             try:
                 c, u = _upsert_video_batch(session, video_items, all_ids, client, region, now_utc)
@@ -1124,10 +1135,12 @@ def collect_daily_shorts():
         return {"status": "error", "message": str(e)}
 
     now_utc = datetime.now(timezone.utc)
-    period_start = now_utc - timedelta(hours=24)
-    # 수집 시에는 최근 30일 이내 업로드된 인기 영상을 넓게 긁어옵니다.
-    search_published_after = now_utc - timedelta(days=30)
-    kst_hour = (now_utc + timedelta(hours=9)).strftime("%Y-%m-%dT%H")
+    kst_offset = timedelta(hours=9)
+    today_midnight_kst = (now_utc + kst_offset).replace(hour=0, minute=0, second=0, microsecond=0)
+    period_start = today_midnight_kst - kst_offset  # KST 오늘 00:00 → UTC
+    # API 인덱싱 지연 보정: period_start 6시간 전부터 넓게 검색 후 Python에서 재필터링
+    search_published_after = period_start - timedelta(hours=6)
+    kst_hour = (now_utc + kst_offset).strftime("%Y-%m-%dT%H")
     regions = get_collection_regions()
 
     total_collected = total_updated = total_chart = 0
@@ -1135,6 +1148,17 @@ def collect_daily_shorts():
         video_items, all_ids = _collect_two_pages(client, region, search_published_after)
         if not all_ids:
             continue
+
+        # period_start(KST 00:00) 이전 발행 영상 제거 후 조회수 내림차순 정렬
+        video_items = sorted(
+            [item for item in video_items if item.get("published_at") and item["published_at"] >= period_start],
+            key=lambda x: x.get("view_count", 0),
+            reverse=True,
+        )
+        all_ids = [item["platform_video_id"] for item in video_items]
+        if not all_ids:
+            continue
+
         with SyncSession() as session:
             try:
                 c, u = _upsert_video_batch(session, video_items, all_ids, client, region, now_utc)
