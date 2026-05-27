@@ -43,6 +43,27 @@ export default function VideoDetailClient({ video }: { video: VideoData }) {
   const [showDesc, setShowDesc] = useState(false);
   const [videoIds, setVideoIds] = useState<number[]>([]);
   const [overlayHidden, setOverlayHidden] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  // Sync maximized state with URL query parameter on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      setIsMaximized(urlParams.get("max") === "1");
+    }
+  }, []);
+
+  const toggleMaximize = () => {
+    const nextVal = !isMaximized;
+    setIsMaximized(nextVal);
+    const url = new URL(window.location.href);
+    if (nextVal) {
+      url.searchParams.set("max", "1");
+    } else {
+      url.searchParams.delete("max");
+    }
+    window.history.replaceState({}, "", url.pathname + url.search);
+  };
 
   // touch refs
   const touchStartX = useRef<number | null>(null);
@@ -91,7 +112,8 @@ export default function VideoDetailClient({ video }: { video: VideoData }) {
     if (targetId === "main") {
       router.push(`/${locale}`);
     } else {
-      router.push(`/${locale}/v/${targetId}`);
+      const query = isMaximized ? "?max=1" : "";
+      router.push(`/${locale}/v/${targetId}${query}`);
     }
     // Release navigation lock
     setTimeout(() => {
@@ -269,41 +291,97 @@ export default function VideoDetailClient({ video }: { video: VideoData }) {
       </header>
 
       {/* ── 비디오 임베드 플레이어 ── */}
-      <div className="flex justify-center mb-6">
-        <div className="relative w-full max-w-[320px] aspect-[9/16] rounded-3xl overflow-hidden bg-slate-900 border-2 border-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.6)] group">
-          <iframe
-            src={`https://www.youtube.com/embed/${video.platform_video_id}?autoplay=0&rel=0`}
-            title={video.title}
-            className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-          {/* 터치 스와이프 및 유튜브 앱 연결 오버레이 */}
-          {!overlayHidden && (
-            <div
-              onClick={() => setOverlayHidden(true)}
-              className="absolute inset-0 bg-black/20 hover:bg-black/35 flex flex-col items-center justify-center cursor-pointer transition-all z-10"
-            >
-              <button 
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  handleOpenYouTube();
-                }}
-                className="w-16 h-16 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110 active:scale-95 border border-red-500/20"
-                title="유튜브 앱에서 재생"
-              >
-                <span className="text-2xl pl-1 text-white">▶</span>
-              </button>
-              
-              <div className="mt-4 flex flex-col items-center gap-1.5 px-4 text-center">
-                <span className="text-[10px] text-white font-extrabold bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-xs shadow-md border border-white/5">
-                  유튜브 앱에서 시청하기 (클릭)
-                </span>
-                <span className="text-[9.5px] text-slate-300 font-medium bg-slate-950/65 px-3 py-1 rounded-full backdrop-blur-xs border border-white/5">
-                  여기를 탭하면 웹에서 재생 / 스와이프하여 이동
-                </span>
+      <div className={isMaximized ? "fixed inset-0 z-50 bg-black flex items-center justify-center" : "flex justify-center mb-6"}>
+        <div className={isMaximized ? "relative w-[min(100vw,calc(100vh*9/16))] aspect-[9/16] bg-slate-950 flex items-center justify-center shadow-2xl animate-in fade-in zoom-in-95 duration-200" : "relative w-full max-w-[320px] aspect-[9/16] rounded-3xl overflow-hidden bg-slate-900 border-2 border-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.6)] group"}>
+          {overlayHidden ? (
+            <>
+              <iframe
+                src={`https://www.youtube.com/embed/${video.platform_video_id}?autoplay=1&rel=0&fs=0`}
+                title={video.title}
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              />
+              {/* 좌/우 엣지 스와이프 존 — 상단 설정(15%) 및 하단 컨트롤(25%) 영역은 터치 방해 방지를 위해 제외 */}
+              <div
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                className="absolute left-0 top-[15%] w-[18%] h-[60%] z-20"
+                style={{ touchAction: "none" }}
+              />
+              <div
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                className="absolute right-0 top-[15%] w-[18%] h-[60%] z-20"
+                style={{ touchAction: "none" }}
+              />
+            </>
+          ) : (
+            <>
+              {/* 썸네일 (iframe 로드 전) */}
+              {video.thumbnail_url && (
+                <img
+                  src={video.thumbnail_url}
+                  alt={video.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              )}
+              {/* 터치 스와이프 및 유튜브 앱 연결 오버레이 */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                {/* 웹 재생 버튼 (메인) */}
+                <button
+                  onClick={() => setOverlayHidden(true)}
+                  className="w-16 h-16 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110 active:scale-95 border border-red-500/20"
+                  title="웹에서 재생"
+                >
+                  <span className="text-2xl pl-1 text-white">▶</span>
+                </button>
+
+                {/* 유튜브 앱 보조 버튼 */}
+                <button
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    handleOpenYouTube();
+                  }}
+                  className="mt-4 text-[10px] text-white font-bold bg-black/60 hover:bg-black/80 px-3 py-1.5 rounded-full backdrop-blur-xs border border-white/10 transition-all"
+                >
+                  유튜브 앱에서 시청하기
+                </button>
               </div>
-            </div>
+            </>
+          )}
+
+          {/* 웹 최대화(전체화면) 제어 버튼 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMaximize();
+            }}
+            className="absolute bottom-4 right-4 z-30 w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/10 flex items-center justify-center text-white active:scale-90 transition-all shadow-lg"
+            title={isMaximized ? "전체화면 종료" : "전체화면 확대"}
+          >
+            {isMaximized ? (
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 14h6v6m0-6l-6 6m16-16h-6v6m0-6l6 6" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 10V4h6m-6 0l6 6m10 4h6v6m0-6l-6 6" />
+              </svg>
+            )}
+          </button>
+
+          {/* 최대화 상태일 때 좌측 상단 뒤로가기(종료) 버튼 */}
+          {isMaximized && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleMaximize();
+              }}
+              className="absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/10 flex items-center justify-center text-white active:scale-90 transition-all shadow-lg"
+              title="전체화면 종료"
+            >
+              <span className="text-lg">←</span>
+            </button>
           )}
         </div>
       </div>

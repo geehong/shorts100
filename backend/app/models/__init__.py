@@ -6,6 +6,8 @@ from .chart_entry import ChartEntry
 from .consent_log import ConsentLog
 from .user import User
 from .download_log import DownloadLog
+from .download_request_log import DownloadRequestLog
+from .search_query_log import SearchQueryLog
 
 __all__ = [
     "Base",
@@ -21,6 +23,8 @@ __all__ = [
     "ConsentLog",
     "User",
     "DownloadLog",
+    "DownloadRequestLog",
+    "SearchQueryLog",
 ]
 
 
