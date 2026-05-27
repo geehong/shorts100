@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
+import AdsManager from "@/components/AdsManager";
 import "../globals.css";
 
 const SwRegister = () => (
@@ -40,18 +41,13 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale}>
-      <head>
-        <script
-          async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1199110233969910"
-          crossOrigin="anonymous"
-        />
-      </head>
+      <head />
       <body>
         <SwRegister />
         <NextIntlClientProvider messages={messages}>
           {children}
           <CookieConsentBanner />
+          <AdsManager />
         </NextIntlClientProvider>
       </body>
     </html>
