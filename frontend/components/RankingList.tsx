@@ -1152,7 +1152,27 @@ function ListView({ items, lang }: { items: RankingItem[]; lang: Lang }) {
                   </div>
                 </div>
 
-                <span className="text-violet-300 text-xs shrink-0">▶</span>
+                <div className="flex flex-col items-center gap-1 shrink-0">
+                  <span className="text-violet-300 text-xs">▶</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const url = `https://www.youtube.com/shorts/${item.platform_video_id}`;
+                      if (navigator.share) {
+                        navigator.share({ title: item.title, url });
+                      } else {
+                        navigator.clipboard.writeText(url);
+                      }
+                    }}
+                    className="text-gray-300 hover:text-violet-400 transition-colors"
+                    title="Share"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           );

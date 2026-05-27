@@ -210,13 +210,24 @@ export default function RegisterPage() {
         </form>
 
         {/* Footer Link */}
-        <div className="text-center mt-6 pt-4 border-t border-gray-100">
+        <div className="text-center mt-6 pt-4 border-t border-gray-100 space-y-2">
           <button
             onClick={() => router.push(`/${lang}/download`)}
             className="text-xs text-gray-500 hover:text-gray-700 font-bold"
           >
             {lang === "ko" ? "← 뒤로 가기 (로그인 페이지)" : "← Back (Login Page)"}
           </button>
+          <p className="text-[10px] text-gray-400">
+            {lang === "ko" ? "가입 시 " : "By signing up, you agree to our "}
+            <button onClick={() => router.push(`/${lang}/terms`)} className="text-violet-500 underline">
+              {lang === "ko" ? "이용약관" : "Terms of Service"}
+            </button>
+            {lang === "ko" ? " 및 " : " and "}
+            <button onClick={() => router.push(`/${lang}/privacy`)} className="text-violet-500 underline">
+              {lang === "ko" ? "개인정보처리방침" : "Privacy Policy"}
+            </button>
+            {lang === "ko" ? "에 동의합니다." : "."}
+          </p>
         </div>
       </div>
     </div>

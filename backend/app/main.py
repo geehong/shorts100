@@ -16,7 +16,7 @@ from typing import List
 import os
 
 from .db import get_db
-from app.models import Video, Ranking, VideoStat, Channel, User, DownloadLog
+from app.models import Video, Ranking, VideoStat, Channel, User, DownloadLog, DownloadRequestLog, SearchQueryLog
 from app.services.auth import hash_password, verify_password, generate_token, verify_token
 from app.services.downloader import extract_metadata, download_video, clean_old_files
 
@@ -93,74 +93,8 @@ async def get_videos(
     videos = result.scalars().all()
     return videos
 
-@app.get("/api/videos/search")
-async def search_videos(
-    q: str = Query(..., min_length=1),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    영상 제목, 설명, 채널명 검색 API
-    """
-    from sqlalchemy import or_
-    
-    search_pattern = f"%{q}%"
-    query = (
-        select(Video)
-        .join(Video.channel)
-        .options(selectinload(Video.channel))
-        .where(Video.is_short == True)
-        .where(Video.safety_status.notin_(["hidden", "banned"]))
-        .where(
-            or_(
-                Video.title.ilike(search_pattern),
-                Video.description.ilike(search_pattern),
-                Channel.title.ilike(search_pattern)
-            )
-        )
-        .order_by(Video.view_count.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    result = await db.execute(query)
-    videos = result.scalars().all()
-    
-    items = []
-    for i, v in enumerate(videos):
-        items.append({
-            "id": v.id,
-            "title": v.title,
-            "channel_title": v.channel.title,
-            "thumbnail_url": v.thumbnail_url,
-            "view_count": v.view_count,
-            "like_count": v.like_count,
-            "score": float(v.view_count),
-            "position": offset + i + 1,
-            "platform_video_id": v.platform_video_id,
-            "category": v.category.value if v.category else None,
-            "published_at": v.published_at.isoformat() if v.published_at else None,
-        })
-    return items
 
-@app.get("/api/videos/{video_id}", response_model=VideoResponse)
-async def get_video(
-    video_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    특정 동영상 상세 조회
-    """
-    query = (
-        select(Video)
-        .options(selectinload(Video.channel))
-        .where(Video.id == video_id)
-    )
-    result = await db.execute(query)
-    video = result.scalar_one_or_none()
-    if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
-    return video
+
 
 def _build_ranking_response(r: Ranking) -> dict:
     v = r.video
@@ -969,6 +903,95 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
 
 
+@app.get("/api/videos/search")
+async def search_videos(
+    request: Request,
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    영상 제목, 설명, 채널명 검색 API
+    """
+    if offset == 0:
+        try:
+            user_id = current_user.id if current_user else None
+            guest_ip = get_client_ip(request) if not current_user else None
+            guest_session_id = request.cookies.get("sid") if not current_user else None
+            
+            search_log = SearchQueryLog(
+                user_id=user_id,
+                guest_ip=guest_ip,
+                guest_session_id=guest_session_id,
+                query=q.strip()
+            )
+            db.add(search_log)
+            await db.commit()
+        except Exception as e:
+            print(f"[SEARCH_LOG_ERROR] Failed to save search query log: {e}", flush=True)
+    from sqlalchemy import or_
+    
+    search_pattern = f"%{q}%"
+    query = (
+        select(Video)
+        .join(Video.channel)
+        .options(selectinload(Video.channel))
+        .where(Video.is_short == True)
+        .where(Video.safety_status.notin_(["hidden", "banned"]))
+        .where(
+            or_(
+                Video.title.ilike(search_pattern),
+                Video.description.ilike(search_pattern),
+                Channel.title.ilike(search_pattern)
+            )
+        )
+        .order_by(Video.view_count.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(query)
+    videos = result.scalars().all()
+    
+    items = []
+    for i, v in enumerate(videos):
+        items.append({
+            "id": v.id,
+            "title": v.title,
+            "channel_title": v.channel.title,
+            "thumbnail_url": v.thumbnail_url,
+            "view_count": v.view_count,
+            "like_count": v.like_count,
+            "score": float(v.view_count),
+            "position": offset + i + 1,
+            "platform_video_id": v.platform_video_id,
+            "category": v.category.value if v.category else None,
+            "published_at": v.published_at.isoformat() if v.published_at else None,
+        })
+    return items
+
+
+@app.get("/api/videos/{video_id}", response_model=VideoResponse)
+async def get_video(
+    video_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    특정 동영상 상세 조회
+    """
+    query = (
+        select(Video)
+        .options(selectinload(Video.channel))
+        .where(Video.id == video_id)
+    )
+    result = await db.execute(query)
+    video = result.scalar_one_or_none()
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return video
+
+
 @app.post("/api/auth/register")
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     # Check if username exists
@@ -1184,6 +1207,33 @@ async def update_profile(
     }
 
 
+@app.get("/api/auth/downloads")
+async def get_download_history(
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from sqlalchemy import desc
+    result = await db.execute(
+        select(DownloadLog)
+        .where(DownloadLog.user_id == current_user.id)
+        .order_by(desc(DownloadLog.created_at))
+        .limit(50)
+    )
+    logs = result.scalars().all()
+    return [
+        {
+            "id": str(log.id),
+            "original_url": log.original_url,
+            "created_at": log.created_at.isoformat(),
+            "expires_at": log.expires_at.isoformat(),
+            "file_token": log.file_token,
+        }
+        for log in logs
+    ]
+
+
 @app.get("/api/download/limits")
 async def get_download_limits(
     request: Request,
@@ -1231,97 +1281,143 @@ async def prepare_download(
     url = req.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL cannot be empty")
-        
-    # Check limit first
-    if current_user:
-        if current_user.role not in ["master", "admin"] and current_user.points <= 0:
-            raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
-    else:
-        # Check guest daily limit
-        client_ip = get_client_ip(request)
-        session_id = request.cookies.get("sid") or "unknown_sid"
-        since = datetime.now(timezone.utc) - timedelta(days=1)
-        from sqlalchemy import func
-        stmt = (
-            select(func.count(DownloadLog.id))
-            .where(DownloadLog.user_id == None)
-            .where(
-                (DownloadLog.guest_ip == client_ip) | 
-                (DownloadLog.guest_session_id == session_id)
-            )
-            .where(DownloadLog.created_at >= since)
-        )
-        downloads_count = (await db.execute(stmt)).scalar() or 0
-        if downloads_count >= 5:
-            raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
 
-    # Clean old files to keep directory tidy
-    try:
-        clean_old_files()
-    except Exception:
-        pass
+    client_ip = get_client_ip(request) if not current_user else None
+    session_id = request.cookies.get("sid") or "unknown_sid" if not current_user else None
 
-    # Extract metadata using yt-dlp
-    try:
-        meta = await extract_metadata(url)
-    except ValueError as e:
-        print(f"[DEBUG_PREPARE] ValueError: {e} for url: {url}", flush=True)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        print(f"[DEBUG_PREPARE] Exception: {e} for url: {url}", flush=True)
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail="UNSUPPORTED_URL")
-
-    # Generate a unique token for safe download
-    file_id = str(uuid.uuid4())
-    
-    # Download file asynchronously
-    try:
-        local_path = await download_video(url, file_id)
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception:
-        raise HTTPException(status_code=500, detail="DOWNLOAD_FAILED")
-
-    # Save to download log and decrement member credits
-    file_token = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-    
-    if current_user:
-        if current_user.role not in ["master", "admin"]:
-            current_user.points = max(0, current_user.points - 1)
-        db.add(current_user)
-        log = DownloadLog(
-            user_id=current_user.id,
-            file_token=file_token,
-            local_path=local_path,
-            original_url=url,
-            expires_at=expires_at
-        )
-    else:
-        client_ip = get_client_ip(request)
-        session_id = request.cookies.get("sid") or "unknown_sid"
-        log = DownloadLog(
-            guest_ip=client_ip,
-            guest_session_id=session_id,
-            file_token=file_token,
-            local_path=local_path,
-            original_url=url,
-            expires_at=expires_at
-        )
-        
-    db.add(log)
+    # Initial pending log record
+    req_log = DownloadRequestLog(
+        user_id=current_user.id if current_user else None,
+        guest_ip=client_ip,
+        guest_session_id=session_id,
+        url=url,
+        status="pending"
+    )
+    db.add(req_log)
     await db.commit()
-    
-    return {
-        "file_token": file_token,
-        "title": meta["title"],
-        "thumbnail": meta["thumbnail"],
-        "duration": meta["duration"],
-        "extractor": meta["extractor"],
-        "expires_at": expires_at.isoformat()
-    }
+    await db.refresh(req_log)
+
+    try:
+        # Check limit first
+        if current_user:
+            if current_user.role not in ["master", "admin"] and current_user.points <= 0:
+                req_log.status = "limit_exceeded"
+                req_log.error_detail = "LIMIT_EXCEEDED"
+                await db.commit()
+                raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
+        else:
+            # Check guest daily limit
+            client_ip_guest = get_client_ip(request)
+            session_id_guest = request.cookies.get("sid") or "unknown_sid"
+            since = datetime.now(timezone.utc) - timedelta(days=1)
+            
+            from sqlalchemy import func
+            stmt = (
+                select(func.count(DownloadLog.id))
+                .where(DownloadLog.user_id == None)
+                .where(
+                    (DownloadLog.guest_ip == client_ip_guest) | 
+                    (DownloadLog.guest_session_id == session_id_guest)
+                )
+                .where(DownloadLog.created_at >= since)
+            )
+            downloads_count = (await db.execute(stmt)).scalar() or 0
+            if downloads_count >= 5:
+                req_log.status = "limit_exceeded"
+                req_log.error_detail = "LIMIT_EXCEEDED"
+                await db.commit()
+                raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
+
+        # Clean old files to keep directory tidy
+        try:
+            clean_old_files()
+        except Exception:
+            pass
+
+        # Extract metadata using yt-dlp
+        try:
+            meta = await extract_metadata(url)
+        except ValueError as e:
+            print(f"[DEBUG_PREPARE] ValueError: {e} for url: {url}", flush=True)
+            req_log.status = "failed"
+            req_log.error_detail = str(e)
+            await db.commit()
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            import traceback
+            print(f"[DEBUG_PREPARE] Exception: {e} for url: {url}", flush=True)
+            traceback.print_exc()
+            req_log.status = "failed"
+            req_log.error_detail = "UNSUPPORTED_URL"
+            await db.commit()
+            raise HTTPException(status_code=400, detail="UNSUPPORTED_URL")
+
+        # Generate a unique token for safe download
+        file_id = str(uuid.uuid4())
+        
+        # Download file asynchronously
+        try:
+            local_path = await download_video(url, file_id)
+        except ValueError as e:
+            req_log.status = "failed"
+            req_log.error_detail = str(e)
+            await db.commit()
+            raise HTTPException(status_code=500, detail=str(e))
+        except Exception:
+            req_log.status = "failed"
+            req_log.error_detail = "DOWNLOAD_FAILED"
+            await db.commit()
+            raise HTTPException(status_code=500, detail="DOWNLOAD_FAILED")
+
+        # Save to download log and decrement member credits
+        file_token = str(uuid.uuid4())
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        
+        if current_user:
+            if current_user.role not in ["master", "admin"]:
+                current_user.points = max(0, current_user.points - 1)
+            db.add(current_user)
+            log = DownloadLog(
+                user_id=current_user.id,
+                file_token=file_token,
+                local_path=local_path,
+                original_url=url,
+                expires_at=expires_at
+            )
+        else:
+            client_ip_guest = get_client_ip(request)
+            session_id_guest = request.cookies.get("sid") or "unknown_sid"
+            log = DownloadLog(
+                guest_ip=client_ip_guest,
+                guest_session_id=session_id_guest,
+                file_token=file_token,
+                local_path=local_path,
+                original_url=url,
+                expires_at=expires_at
+            )
+            
+        db.add(log)
+        
+        # Update request log to success
+        req_log.status = "success"
+        req_log.file_token = file_token
+        await db.commit()
+        
+        return {
+            "file_token": file_token,
+            "title": meta["title"],
+            "thumbnail": meta["thumbnail"],
+            "duration": meta["duration"],
+            "extractor": meta["extractor"],
+            "expires_at": expires_at.isoformat()
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        req_log.status = "failed"
+        req_log.error_detail = str(e)[:1024]
+        await db.commit()
+        raise HTTPException(status_code=500, detail="INTERNAL_SERVER_ERROR")
 
 
 @app.get("/api/download/serve/{file_token}")

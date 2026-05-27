@@ -4,8 +4,9 @@ import json
 import base64
 import time
 import secrets
+import os
 
-SECRET_KEY = b"shorts100_download_secret_key_change_me_in_prod_12345"
+SECRET_KEY = os.environ.get("AUTH_SECRET_KEY", "shorts100_download_secret_key_change_me_in_prod_12345").encode("utf-8")
 
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)

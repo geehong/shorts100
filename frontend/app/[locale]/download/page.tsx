@@ -95,6 +95,7 @@ export default function DownloadPage() {
   const router = useRouter();
   const lang = ((params?.locale as string) === "en" ? "en" : "ko") as "en" | "ko";
   const t = translations[lang];
+  const [uiLang, setUiLang] = useState<"en" | "ko">(lang);
 
   // UI State
   const [url, setUrl] = useState("");
@@ -446,31 +447,66 @@ export default function DownloadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fdf9f5] py-6 px-4 font-sans max-w-2xl mx-auto flex flex-col justify-between">
-      <div>
-        {/* Header (Branding & Limits Status on the Right) */}
-        <header className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => router.push(`/${lang}`)}>
-            <span className="text-xl">🔥</span>
-            <span className="font-black text-sm text-gray-800 tracking-tight">Shorts100</span>
-            <span className="text-xs font-bold text-blue-600">ShortsDown</span>
-          </div>
-          
-          {/* Limits display where "Back to rankings" used to be */}
-          <div className="bg-violet-100 text-violet-600 px-3.5 py-1.5 rounded-full font-black text-xs shadow-sm">
+    <div className="min-h-screen bg-[#fdf9f5] font-sans max-w-2xl mx-auto flex flex-col">
+      {/* ══ 고정 상단 헤더 (순위 페이지와 동일 구조) ══ */}
+      <div
+        className="sticky top-0 z-40 w-full"
+        style={{
+          background: "linear-gradient(to bottom,rgba(253,249,245,0.97) 0%,rgba(253,249,245,0.90) 100%)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          boxShadow: "0 4px 20px -5px rgba(0,0,0,0.06)"
+        }}
+      >
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          {/* 로고 & 네비 */}
+          <span className="text-lg select-none">🔥</span>
+          <span className="font-black text-sm text-gray-800 tracking-tight flex items-center gap-1">
+            <span className="cursor-pointer" onClick={() => router.push(`/${lang}`)}>Shorts100</span>
+            <span className="text-blue-600">ShortsDown</span>
+          </span>
+
+          {/* APK 앱 설치 버튼 */}
+          <button
+            onClick={() => { window.location.href = "/shorts100.apk"; }}
+            title="앱 다운로드 (APK)"
+            className="flex items-center gap-1 text-[9px] font-bold px-2 py-1 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-all"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 16L12 4M12 16l-4-4M12 16l4-4"/>
+              <path d="M3 20h18"/>
+            </svg>
+            App
+          </button>
+
+          {/* 잔여 횟수 뱃지 */}
+          <div className="bg-violet-100 text-violet-600 px-3 py-1 rounded-full font-black text-[10px] shadow-sm whitespace-nowrap shrink-0">
             {limits ? (
-              limits.role === "master" || limits.role === "admin" ? (
-                t.masterLimit
-              ) : limits.role === "guest" ? (
-                t.guestLimit.replace("{left}", String(limits.downloads_left ?? 5))
-              ) : (
-                t.memberLimit.replace("{points}", String(limits.points ?? 20))
-              )
-            ) : (
-              "Guest : 5번"
-            )}
+              limits.role === "master" || limits.role === "admin" ? t.masterLimit
+              : limits.role === "guest" ? t.guestLimit.replace("{left}", String(limits.downloads_left ?? 5))
+              : t.memberLimit.replace("{points}", String(limits.points ?? 20))
+            ) : "Guest : 5번"}
           </div>
-        </header>
+
+          {/* EN / KR 언어 전환 */}
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => setUiLang("en")}
+              className={`text-[9px] font-extrabold px-2.5 py-1 rounded-full transition-all ${
+                uiLang === "en" ? "bg-violet-500 text-white shadow-sm" : "bg-violet-100 text-violet-500"
+              }`}
+            >EN</button>
+            <button
+              onClick={() => setUiLang("ko")}
+              className={`text-[9px] font-extrabold px-2.5 py-1 rounded-full transition-all ${
+                uiLang === "ko" ? "bg-violet-500 text-white shadow-sm" : "bg-violet-100 text-violet-500"
+              }`}
+            >KR</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 px-4 py-5">
 
         {/* URL Input Box */}
         <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 mb-4">
@@ -632,13 +668,13 @@ export default function DownloadPage() {
             <h3 className="text-[10px] font-black text-gray-400 mb-3 uppercase tracking-wider">
               {lang === "ko" ? "멤버 로그인" : "Member Login"}
             </h3>
-            <form onSubmit={handleAuthSubmit} className="flex gap-2">
+            <form onSubmit={handleAuthSubmit} className="flex flex-col gap-2">
               <input
                 type="text"
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
                 placeholder={lang === "ko" ? "아이디" : "Username"}
-                className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
                 required
               />
               <input
@@ -646,12 +682,12 @@ export default function DownloadPage() {
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 placeholder={lang === "ko" ? "비밀번호" : "Password"}
-                className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
                 required
               />
               <button
                 type="submit"
-                className="bg-gray-800 hover:bg-gray-900 text-white font-bold px-4 py-2 rounded-xl text-xs transition"
+                className="w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-2.5 rounded-xl text-xs transition"
               >
                 {lang === "ko" ? "로그인" : "Login"}
               </button>
@@ -659,7 +695,7 @@ export default function DownloadPage() {
             {authMessage && (
               <p className="text-[10px] font-bold text-blue-600 mt-2 text-center">{authMessage}</p>
             )}
-            <div className="text-center mt-3 pt-3 border-t border-gray-50">
+            <div className="text-center mt-3 pt-3 border-t border-gray-100">
               <button
                 onClick={() => router.push(`/${lang}/download/register`)}
                 className="text-xs font-extrabold text-blue-600 hover:text-blue-700 underline"
@@ -668,7 +704,7 @@ export default function DownloadPage() {
               </button>
             </div>
             {/* Google Sign In Button */}
-            <div className="mt-4 pt-4 border-t border-gray-50 flex flex-col items-center justify-center gap-2">
+            <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col items-center justify-center gap-2">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                 {lang === "ko" ? "또는 구글 계정으로 로그인" : "Or Sign in with Google"}
               </span>
@@ -676,30 +712,58 @@ export default function DownloadPage() {
             </div>
           </div>
         ) : (
-          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 mt-6 flex justify-between items-center">
-            <span className="text-xs font-bold text-gray-600">
-              {lang === "ko" ? `로그인됨: ${user?.username}` : `Logged in: ${user?.username}`}
-            </span>
-            <div className="flex gap-2">
+          /* ── 로그인 상태 패널 ── */
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 mt-6">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-3">
+              {lang === "ko" ? "로그인 정보" : "Account"}
+            </p>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 bg-gray-50 rounded-2xl px-4 py-3">
+                <span className="text-base">👤</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-extrabold text-gray-800 truncate">{user?.username}</p>
+                  {user?.email && (
+                    <p className="text-[10px] text-gray-400 font-semibold truncate">{user.email}</p>
+                  )}
+                </div>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                  user?.role === "master" ? "bg-yellow-100 text-yellow-600"
+                  : user?.role === "admin" ? "bg-red-100 text-red-600"
+                  : "bg-blue-100 text-blue-600"
+                }`}>
+                  {user?.role?.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleUpgrade}
+                  className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 rounded-xl text-xs transition"
+                >
+                  {lang === "ko" ? "크레딧 충전 (+50)" : "Refill (+50)"}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-xs transition"
+                >
+                  {lang === "ko" ? "로그아웃" : "Logout"}
+                </button>
+              </div>
               <button
-                onClick={handleUpgrade}
-                className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] transition"
+                onClick={() => router.push(`/${lang}/download/history`)}
+                className="w-full mt-2 py-2 bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs transition"
               >
-                {lang === "ko" ? "크레딧 충전 (+50)" : "Refill (+50)"}
-              </button>
-              <button
-                onClick={handleLogout}
-                className="bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold px-3 py-1.5 rounded-lg text-[10px] transition"
-              >
-                {lang === "ko" ? "로그아웃" : "Logout"}
+                {lang === "ko" ? "📋 다운로드 이력" : "📋 Download History"}
               </button>
             </div>
+            {authMessage && (
+              <p className="text-[10px] font-bold text-blue-600 mt-2 text-center">{authMessage}</p>
+            )}
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <footer className="text-center py-4 border-t border-gray-100 mt-6">
+      <footer className="text-center py-4 border-t border-gray-100 mx-4">
         <p className="text-[9px] font-bold text-gray-400">
           © {new Date().getFullYear()} Shorts100 ShortsDown. All rights reserved.
         </p>

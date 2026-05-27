@@ -4,6 +4,16 @@ import { getMessages } from "next-intl/server";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import "../globals.css";
 
+const SwRegister = () => (
+  <script dangerouslySetInnerHTML={{ __html: `
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js');
+      });
+    }
+  `}} />
+);
+
 export const metadata: Metadata = {
   title: "Shorts100 - 오늘의 쇼츠 TOP 100",
   description: "지금 가장 핫한 유튜브 숏폼 영상 랭킹",
@@ -31,6 +41,7 @@ export default async function LocaleLayout({
   return (
     <html lang={locale}>
       <body>
+        <SwRegister />
         <NextIntlClientProvider messages={messages}>
           {children}
           <CookieConsentBanner />
