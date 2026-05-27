@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter, useParams } from "next/navigation";
 import { buildYouTubeDeepLink, openDeepLink } from "@/lib/deeplink";
 import { fetchRankingsClient } from "@/lib/api";
+import { showInterstitialAd } from "@/lib/admob";
 
 interface ChannelData {
   title: string;
@@ -44,6 +45,11 @@ export default function VideoDetailClient({ video }: { video: VideoData }) {
   const [videoIds, setVideoIds] = useState<number[]>([]);
   const [overlayHidden, setOverlayHidden] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+
+  // 상세 페이지 진입 시 전면 광고 로드 및 노출 (네이티브 앱 환경에서만)
+  useEffect(() => {
+    showInterstitialAd('ca-app-pub-1199110233969910/1701819854');
+  }, []);
 
   // Sync maximized state with URL query parameter on mount
   useEffect(() => {

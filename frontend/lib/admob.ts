@@ -63,3 +63,21 @@ export async function removeBannerAd() {
     console.error('배너 광고 제거 실패:', error);
   }
 }
+
+/**
+ * 전면 광고 로드 및 노출 함수
+ * @param adUnitId AdMob 콘솔에서 발급받은 실제 전면 광고 단위 ID (기본값은 Android 테스트 전면 광고 ID)
+ */
+export async function showInterstitialAd(adUnitId: string = 'ca-pub-3940256099942544/1033173712') {
+  if (!isNative()) return;
+  try {
+    await AdMob.prepareInterstitial({
+      adId: adUnitId,
+      isTesting: adUnitId === 'ca-pub-3940256099942544/1033173712',
+    });
+    await AdMob.showInterstitial();
+    console.log('전면 광고 노출 성공');
+  } catch (error) {
+    console.error('전면 광고 노출 실패:', error);
+  }
+}
