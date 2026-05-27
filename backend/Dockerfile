@@ -12,7 +12,8 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.in-project true && \
-    poetry install --no-dev --no-interaction --no-ansi
+    poetry install --no-dev --no-interaction --no-ansi && \
+    .venv/bin/pip install yt-dlp
 
 # Stage 2: Runtime
 FROM python:3.12-slim AS runtime

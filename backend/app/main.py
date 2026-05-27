@@ -5,17 +5,21 @@ from typing import Optional
 import secrets
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
+from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import HTMLResponse, FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from typing import List
+import os
 
 from .db import get_db
-from app.models import Video, Ranking, VideoStat, Channel
+from app.models import Video, Ranking, VideoStat, Channel, User, DownloadLog
+from app.services.auth import hash_password, verify_password, generate_token, verify_token
+from app.services.downloader import extract_metadata, download_video, clean_old_files
+
 from .schemas import VideoResponse
 from .core.cache import cache
 from .config import settings
@@ -910,3 +914,467 @@ async def admin_video_action(
     )
     await db.commit()
     return HTMLResponse(f'<meta http-equiv="refresh" content="0;url=/admin/reports"><p>✅ 처리 완료 ({action})</p>')
+
+
+# ── ShortsDown API 엔드포인트 ──────────────────────────────────────────
+
+security_bearer = HTTPBearer(auto_error=False)
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50)
+    password: str = Field(..., min_length=4, max_length=50)
+    name: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    region: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class GoogleLoginRequest(BaseModel):
+    credential: str
+
+class ProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    region: Optional[str] = None
+
+class DownloadPrepareRequest(BaseModel):
+    url: str
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    if not credentials:
+        return None
+    token = credentials.credentials
+    payload = verify_token(token)
+    if not payload or "user_id" not in payload:
+        return None
+    try:
+        user_uuid = uuid.UUID(payload["user_id"])
+    except ValueError:
+        return None
+        
+    result = await db.execute(select(User).where(User.id == user_uuid))
+    return result.scalar_one_or_none()
+
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+
+@app.post("/api/auth/register")
+async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    # Check if username exists
+    existing = await db.execute(select(User).where(User.username == req.username))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Username already exists")
+        
+    new_user = User(
+        username=req.username,
+        hashed_password=hash_password(req.password),
+        role="member",
+        points=20,
+        name=req.name,
+        age=req.age,
+        gender=req.gender,
+        region=req.region
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    
+    token = generate_token({"user_id": str(new_user.id)})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "username": new_user.username,
+            "role": new_user.role,
+            "points": new_user.points,
+            "email": new_user.email,
+            "name": new_user.name,
+            "age": new_user.age,
+            "gender": new_user.gender,
+            "region": new_user.region,
+            "avatar_url": new_user.avatar_url
+        }
+    }
+
+
+@app.post("/api/auth/login")
+async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.username == req.username))
+    user = result.scalar_one_or_none()
+    if not user or not user.hashed_password or not verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+        
+    token = generate_token({"user_id": str(user.id)})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "username": user.username,
+            "role": user.role,
+            "points": user.points,
+            "email": user.email,
+            "name": user.name,
+            "age": user.age,
+            "gender": user.gender,
+            "region": user.region,
+            "avatar_url": user.avatar_url
+        }
+    }
+
+
+@app.get("/api/auth/me")
+async def me(current_user: Optional[User] = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {
+        "username": current_user.username,
+        "role": current_user.role,
+        "points": current_user.points,
+        "email": current_user.email,
+        "name": current_user.name,
+        "age": current_user.age,
+        "gender": current_user.gender,
+        "region": current_user.region,
+        "avatar_url": current_user.avatar_url
+    }
+
+
+@app.get("/api/auth/config")
+async def get_auth_config():
+    return {
+        "google_client_id": settings.GOOGLE_OAUTH_KEY or ""
+    }
+
+
+@app.post("/api/auth/oauth/google")
+async def google_oauth_login(req: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+    from google.oauth2 import id_token
+    from google.auth.transport import requests
+
+    client_id = settings.GOOGLE_OAUTH_KEY
+    if not client_id:
+        raise HTTPException(status_code=500, detail="Google Client ID is not configured on the server.")
+
+    try:
+        idinfo = id_token.verify_oauth2_token(req.credential, requests.Request(), client_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Google token: {str(e)}")
+
+    oauth_id = idinfo.get("sub")
+    email = idinfo.get("email")
+    name = idinfo.get("name")
+    avatar_url = idinfo.get("picture")
+
+    if not oauth_id:
+        raise HTTPException(status_code=400, detail="OAuth ID (sub) not provided in Google token.")
+
+    # 1. Search for existing user with oauth_id
+    result = await db.execute(select(User).where(User.oauth_id == oauth_id))
+    user = result.scalar_one_or_none()
+
+    if not user and email:
+        # 2. Search by email to link accounts
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        if user:
+            # Link Google account
+            user.oauth_provider = "google"
+            user.oauth_id = oauth_id
+            if not user.avatar_url:
+                user.avatar_url = avatar_url
+            if not user.name:
+                user.name = name
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+    if not user:
+        # 3. Register new user
+        base_username = email.split("@")[0] if email else f"google_{oauth_id[:8]}"
+        username = base_username
+        
+        # Check collision
+        suffix = 1
+        while True:
+            existing_user = await db.execute(select(User).where(User.username == username))
+            if not existing_user.scalar_one_or_none():
+                break
+            username = f"{base_username}_{suffix}"
+            suffix += 1
+
+        user = User(
+            username=username,
+            hashed_password=None,
+            email=email,
+            oauth_provider="google",
+            oauth_id=oauth_id,
+            avatar_url=avatar_url,
+            name=name,
+            role="member",
+            points=20
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    token = generate_token({"user_id": str(user.id)})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "username": user.username,
+            "role": user.role,
+            "points": user.points,
+            "email": user.email,
+            "name": user.name,
+            "age": user.age,
+            "gender": user.gender,
+            "region": user.region,
+            "avatar_url": user.avatar_url
+        }
+    }
+
+
+@app.put("/api/auth/profile")
+async def update_profile(
+    req: ProfileUpdateRequest,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if req.name is not None:
+        current_user.name = req.name
+    if req.age is not None:
+        current_user.age = req.age
+    if req.gender is not None:
+        current_user.gender = req.gender
+    if req.region is not None:
+        current_user.region = req.region
+
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+
+    return {
+        "status": "success",
+        "user": {
+            "username": current_user.username,
+            "role": current_user.role,
+            "points": current_user.points,
+            "email": current_user.email,
+            "name": current_user.name,
+            "age": current_user.age,
+            "gender": current_user.gender,
+            "region": current_user.region,
+            "avatar_url": current_user.avatar_url
+        }
+    }
+
+
+@app.get("/api/download/limits")
+async def get_download_limits(
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if current_user:
+        return {
+            "role": current_user.role,
+            "points": current_user.points,
+            "limit_reached": False if current_user.role in ["master", "admin"] else current_user.points <= 0
+        }
+    
+    # Guest logic
+    client_ip = get_client_ip(request)
+    session_id = request.cookies.get("sid") or "unknown_sid"
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    
+    from sqlalchemy import func
+    stmt = (
+        select(func.count(DownloadLog.id))
+        .where(DownloadLog.user_id == None)
+        .where(
+            (DownloadLog.guest_ip == client_ip) | 
+            (DownloadLog.guest_session_id == session_id)
+        )
+        .where(DownloadLog.created_at >= since)
+    )
+    downloads_count = (await db.execute(stmt)).scalar() or 0
+    
+    return {
+        "role": "guest",
+        "downloads_left": max(0, 5 - downloads_count),
+        "limit_reached": downloads_count >= 5
+    }
+
+
+@app.post("/api/download/prepare")
+async def prepare_download(
+    req: DownloadPrepareRequest,
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL cannot be empty")
+        
+    # Check limit first
+    if current_user:
+        if current_user.role not in ["master", "admin"] and current_user.points <= 0:
+            raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
+    else:
+        # Check guest daily limit
+        client_ip = get_client_ip(request)
+        session_id = request.cookies.get("sid") or "unknown_sid"
+        since = datetime.now(timezone.utc) - timedelta(days=1)
+        from sqlalchemy import func
+        stmt = (
+            select(func.count(DownloadLog.id))
+            .where(DownloadLog.user_id == None)
+            .where(
+                (DownloadLog.guest_ip == client_ip) | 
+                (DownloadLog.guest_session_id == session_id)
+            )
+            .where(DownloadLog.created_at >= since)
+        )
+        downloads_count = (await db.execute(stmt)).scalar() or 0
+        if downloads_count >= 5:
+            raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
+
+    # Clean old files to keep directory tidy
+    try:
+        clean_old_files()
+    except Exception:
+        pass
+
+    # Extract metadata using yt-dlp
+    try:
+        meta = await extract_metadata(url)
+    except ValueError as e:
+        print(f"[DEBUG_PREPARE] ValueError: {e} for url: {url}", flush=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG_PREPARE] Exception: {e} for url: {url}", flush=True)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail="UNSUPPORTED_URL")
+
+    # Generate a unique token for safe download
+    file_id = str(uuid.uuid4())
+    
+    # Download file asynchronously
+    try:
+        local_path = await download_video(url, file_id)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="DOWNLOAD_FAILED")
+
+    # Save to download log and decrement member credits
+    file_token = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    
+    if current_user:
+        if current_user.role not in ["master", "admin"]:
+            current_user.points = max(0, current_user.points - 1)
+        db.add(current_user)
+        log = DownloadLog(
+            user_id=current_user.id,
+            file_token=file_token,
+            local_path=local_path,
+            original_url=url,
+            expires_at=expires_at
+        )
+    else:
+        client_ip = get_client_ip(request)
+        session_id = request.cookies.get("sid") or "unknown_sid"
+        log = DownloadLog(
+            guest_ip=client_ip,
+            guest_session_id=session_id,
+            file_token=file_token,
+            local_path=local_path,
+            original_url=url,
+            expires_at=expires_at
+        )
+        
+    db.add(log)
+    await db.commit()
+    
+    return {
+        "file_token": file_token,
+        "title": meta["title"],
+        "thumbnail": meta["thumbnail"],
+        "duration": meta["duration"],
+        "extractor": meta["extractor"],
+        "expires_at": expires_at.isoformat()
+    }
+
+
+@app.get("/api/download/serve/{file_token}")
+async def serve_download(
+    file_token: str,
+    dl: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(DownloadLog).where(DownloadLog.file_token == file_token))
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="File token not found")
+        
+    expires_at = log.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="File has expired")
+        
+    if not os.path.exists(log.local_path):
+        raise HTTPException(status_code=404, detail="File does not exist on server")
+        
+    headers = {}
+    if dl == 1:
+        headers["Content-Disposition"] = f'attachment; filename="shortsdown_{file_token[:8]}.mp4"'
+        
+    return FileResponse(
+        path=log.local_path,
+        media_type="video/mp4",
+        headers=headers
+    )
+
+
+@app.post("/api/download/upgrade")
+async def upgrade_membership(
+    current_user: Optional[User] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    current_user.role = "upgraded"
+    current_user.points = current_user.points + 50
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return {
+        "status": "success",
+        "user": {
+            "username": current_user.username,
+            "role": current_user.role,
+            "points": current_user.points
+        }
+    }

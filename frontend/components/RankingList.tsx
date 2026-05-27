@@ -622,8 +622,15 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
         {/* 타이틀 및 한영 전환 */}
         <div className="flex items-center gap-2 px-4 pt-3 pb-1">
           <span className="text-lg">🔥</span>
-          <span className="font-black text-sm text-gray-800 tracking-tight">{T[lang].title}</span>
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-500">{T[lang].badge}</span>
+          <span className="font-black text-sm text-gray-800 tracking-tight flex items-center">
+            {T[lang].title}
+            <span
+              onClick={() => router.push(`/${locale}/download`)}
+              className="ml-1.5 cursor-pointer text-blue-600 hover:text-blue-700 hover:underline transition-colors font-black"
+            >
+              ShortsDown
+            </span>
+          </span>
           <AppInstallButton />
 
           <div className="flex items-center gap-1.5 ml-auto">

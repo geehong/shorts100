@@ -20,6 +20,9 @@ google-api-python-client = "^2.0"
 isodate = "^0.6"
 psycopg2-binary = "^2.9"
 sentry-sdk = {extras = ["fastapi"], version = "^1.40"}
+yt-dlp = "*"
+google-auth = "^2.29.0"
+
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.3"

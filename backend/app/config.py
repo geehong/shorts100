@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str = "changeme"
     SENTRY_DSN: str = ""
     BACKFILL_LIMIT: int = 10000  # DB 영상 수 상한 (초과 시 수집 중단, 업데이트 전용)
+    GOOGLE_OAUTH_KEY: str = ""
 
     @property
     def youtube_key1_keys(self) -> list[str]:
