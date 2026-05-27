@@ -622,7 +622,7 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
         {/* 타이틀 및 한영 전환 */}
         <div className="flex items-center gap-2 px-4 pt-3 pb-1">
           <span className="text-lg">🔥</span>
-          <span className="font-black text-sm text-gray-800 tracking-tight flex items-center">
+          <h1 className="font-black text-sm text-gray-800 tracking-tight flex items-center">
             {T[lang].title}
             <span
               onClick={() => router.push(`/${locale}/download`)}
@@ -630,7 +630,7 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
             >
               ShortsDown
             </span>
-          </span>
+          </h1>
           <AppInstallButton />
 
           <div className="flex items-center gap-1.5 ml-auto">

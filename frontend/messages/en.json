@@ -1,0 +1,29 @@
+{
+  "common": {
+    "rank": "Rank {n}",
+    "views": "{count} views",
+    "likes": "{count} likes",
+    "openInApp": "Open in App"
+  },
+  "main": {
+    "title": "Today's Shorts TOP 100",
+    "subtitle": "Collection of the hottest short-form videos right now"
+  },
+  "rising": {
+    "title": "Rising Creators to Watch",
+    "subtitle": "Channels growing rapidly"
+  },
+  "cookie": {
+    "title": "Cookie Consent",
+    "description": "Shorts100 uses cookies to operate and improve our services.",
+    "essentialOnly": "Essential Only",
+    "acceptAll": "Accept All",
+    "decline": "Decline",
+    "analytics": "Analytics Cookies",
+    "advertising": "Advertising Cookies"
+  },
+  "errors": {
+    "loadFailed": "Failed to load data.",
+    "retry": "Retry"
+  }
+}

@@ -2,7 +2,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # 2단계: 빌드
 FROM node:20-alpine AS builder
@@ -25,6 +25,8 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
+COPY --from=builder /app/i18n ./i18n
+COPY --from=builder /app/messages ./messages
 
 EXPOSE 3000
 CMD ["npm", "start"]

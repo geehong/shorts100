@@ -461,10 +461,10 @@ export default function DownloadPage() {
         <div className="flex items-center gap-2 px-4 pt-3 pb-1">
           {/* 로고 & 네비 */}
           <span className="text-lg select-none">🔥</span>
-          <span className="font-black text-sm text-gray-800 tracking-tight flex items-center gap-1">
+          <h1 className="font-black text-sm text-gray-800 tracking-tight flex items-center gap-1">
             <span className="cursor-pointer" onClick={() => router.push(`/${lang}`)}>Shorts100</span>
             <span className="text-blue-600">ShortsDown</span>
-          </span>
+          </h1>
 
           {/* APK 앱 설치 버튼 */}
           <button
