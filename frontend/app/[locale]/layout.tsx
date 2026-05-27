@@ -40,6 +40,13 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale}>
+      <head>
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1199110233969910"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body>
         <SwRegister />
         <NextIntlClientProvider messages={messages}>
