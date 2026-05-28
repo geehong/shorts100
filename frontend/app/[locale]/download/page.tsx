@@ -667,8 +667,8 @@ export default function DownloadPage() {
           <div className="mt-4 p-4 bg-purple-50 border border-purple-100 rounded-2xl text-xs text-purple-700 font-bold flex flex-col gap-1.5 shadow-sm">
             <span className="text-sm">💡 인스타그램 다운로드 안내:</span>
             <span>인스타그램 서버 보안 정책으로 인해 직접 다운로드가 안 되는 경우, 아래 외부 전용 다운로드 사이트를 편리하게 이용하실 수 있습니다.</span>
-            <a href={`https://snapinsta.app/`} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 font-extrabold mt-1 hover:text-blue-800 text-sm">
-              👉 SnapInsta 사이트에서 다운로드하기
+            <a href={`https://downloadgram.org/`} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 font-extrabold mt-1 hover:text-blue-800 text-sm">
+              👉 Downloadgram 사이트에서 다운로드하기
             </a>
           </div>
         )}
