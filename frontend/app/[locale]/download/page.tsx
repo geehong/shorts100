@@ -733,10 +733,22 @@ export default function DownloadPage() {
               {googleClientId && (
                 <button
                   onClick={() => {
-                    const redirectUri = encodeURIComponent(`${window.location.origin}/api/auth/oauth/google/callback`);
-                    const scope = encodeURIComponent("openid email profile");
-                    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&prompt=select_account`;
-                    window.location.href = url;
+                    // GSI 라이브러리로 직접 One Tap 팝업 트리거
+                    if ((window as any).google?.accounts?.id) {
+                      (window as any).google.accounts.id.prompt();
+                    } else {
+                      // GSI 로드 안 됐으면 스크립트 재로드 후 재시도
+                      const s = document.createElement("script");
+                      s.src = "https://accounts.google.com/gsi/client";
+                      s.onload = () => {
+                        (window as any).google?.accounts?.id?.initialize({
+                          client_id: googleClientId,
+                          callback: handleGoogleLoginCallback
+                        });
+                        (window as any).google?.accounts?.id?.prompt();
+                      };
+                      document.body.appendChild(s);
+                    }
                   }}
                   className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 shadow-sm"
                   id="google-fallback-button"
