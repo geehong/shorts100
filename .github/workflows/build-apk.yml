@@ -44,7 +44,7 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/release.keystore
 
-      - name: Build release APK
+      - name: Build release APK (for website download)
         working-directory: frontend/android
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
@@ -55,11 +55,28 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
+      - name: Build release AAB (for Play Store)
+        working-directory: frontend/android
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease --no-daemon
+
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: shorts100-release-${{ github.run_number }}
+          name: shorts100-apk-${{ github.run_number }}
           path: frontend/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      - name: Upload AAB to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorts100-aab-${{ github.run_number }}
+          path: frontend/android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 30
 
       - name: Deploy APK to server
