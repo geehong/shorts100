@@ -231,12 +231,18 @@ export default function DownloadPage() {
 
   const handleCapacitorGoogleLogin = async () => {
     try {
+      await GoogleAuth.initialize({
+        clientId: "828066610288-b1jqjjm5tpiresrilivgtcilumiqpq9j.apps.googleusercontent.com",
+        scopes: ["profile", "email"],
+        grantOfflineAccess: true,
+      });
       const user = await GoogleAuth.signIn();
       const credential = user.authentication.idToken;
       await handleGoogleCredential(credential);
     } catch (e: any) {
-      if (e?.error !== "popup_closed_by_user") {
-        setAuthMessage(lang === "ko" ? "Google 로그인 실패" : "Google login failed");
+      const code = e?.error ?? e?.code ?? JSON.stringify(e);
+      if (code !== "popup_closed_by_user" && code !== "12501") {
+        setAuthMessage(`Google 로그인 오류: ${code}`);
       }
     }
   };
