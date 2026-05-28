@@ -177,6 +177,26 @@ export default function DownloadPage() {
   useEffect(() => {
     if (authToken || !googleClientId) return;
 
+    // WebView/App environment user-agent override to bypass Google GSI block
+    if (typeof window !== "undefined" && typeof navigator !== "undefined") {
+      const ua = navigator.userAgent;
+      const isWebView = /wv|WebView|Version\/[\d.]+/i.test(ua) || (window as any).Capacitor?.isNativePlatform();
+      if (isWebView) {
+        try {
+          const cleanedUA = ua
+            .replace(/Version\/[0-9.]+\s/g, "")
+            .replace(/; wv\)/g, ")")
+            .replace(/ReactNativeWebView/g, "");
+          Object.defineProperty(navigator, 'userAgent', {
+            get: () => cleanedUA,
+            configurable: true
+          });
+        } catch (e) {
+          console.error("Failed to override userAgent for Google Sign-In support", e);
+        }
+      }
+    }
+
     const initGoogleOAuth = () => {
       if (typeof window !== "undefined" && (window as any).google) {
         (window as any).google.accounts.id.initialize({

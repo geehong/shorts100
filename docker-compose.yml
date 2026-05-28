@@ -35,6 +35,7 @@ services:
     networks:
       shorts100_network:
       shared-network:
+        ipv4_address: 172.18.0.100
         aliases:
           - shorts100-be
     healthcheck:
