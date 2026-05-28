@@ -174,29 +174,10 @@ export default function DownloadPage() {
     }
   }, []);
 
-  // Google OAuth Initialization & Rendering
+  // Google OAuth Initialization & Rendering (web only — native app uses Capacitor GoogleAuth plugin)
   useEffect(() => {
     if (authToken || !googleClientId) return;
-
-    // WebView/App environment user-agent override to bypass Google GSI block
-    if (typeof window !== "undefined" && typeof navigator !== "undefined") {
-      const ua = navigator.userAgent;
-      const isWebView = /wv|WebView|Version\/[\d.]+/i.test(ua) || (window as any).Capacitor?.isNativePlatform();
-      if (isWebView) {
-        try {
-          const cleanedUA = ua
-            .replace(/Version\/[0-9.]+\s/g, "")
-            .replace(/; wv\)/g, ")")
-            .replace(/ReactNativeWebView/g, "");
-          Object.defineProperty(navigator, 'userAgent', {
-            get: () => cleanedUA,
-            configurable: true
-          });
-        } catch (e) {
-          console.error("Failed to override userAgent for Google Sign-In support", e);
-        }
-      }
-    }
+    if (typeof window !== "undefined" && (window as any).Capacitor?.isNativePlatform?.()) return;
 
     const initGoogleOAuth = () => {
       if (typeof window !== "undefined" && (window as any).google) {
