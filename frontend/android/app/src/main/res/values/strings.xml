@@ -4,4 +4,5 @@
     <string name="title_activity_main">Shorts100</string>
     <string name="package_name">com.shorts100.app</string>
     <string name="custom_url_scheme">com.shorts100.app</string>
+    <string name="server_client_id">828066610288-b1jqjjm5tpiresrilivgtcilumiqpq9j.apps.googleusercontent.com</string>
 </resources>

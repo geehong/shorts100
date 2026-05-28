@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
 
@@ -227,6 +228,45 @@ export default function DownloadPage() {
       document.body.appendChild(newScript);
     }
   }, [authToken, googleClientId]);
+
+  const handleCapacitorGoogleLogin = async () => {
+    try {
+      const user = await GoogleAuth.signIn();
+      const credential = user.authentication.idToken;
+      await handleGoogleCredential(credential);
+    } catch (e: any) {
+      if (e?.error !== "popup_closed_by_user") {
+        setAuthMessage(lang === "ko" ? "Google 로그인 실패" : "Google login failed");
+      }
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/oauth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("shorts100_auth_token", data.access_token);
+        setAuthToken(data.access_token);
+        setUser(data.user);
+        fetchLimits(data.access_token);
+        setAuthMessage(lang === "ko" ? "구글 로그인 성공!" : "Google login successful!");
+        if (data.user && (!data.user.age || !data.user.gender || !data.user.region)) {
+          setOnboardingName(data.user.name || "");
+          setShowOnboarding(true);
+        }
+      } else {
+        const err = await res.json();
+        setAuthMessage(err.detail || (lang === "ko" ? "구글 로그인에 실패했습니다." : "Google login failed."));
+      }
+    } catch {
+      setAuthMessage(lang === "ko" ? "로그인 중 오류가 발생했습니다." : "Error occurred during login.");
+    }
+  };
 
   const handleGoogleLoginCallback = async (response: any) => {
     try {
@@ -729,15 +769,16 @@ export default function DownloadPage() {
                 {lang === "ko" ? "또는 구글 계정으로 로그인" : "Or Sign in with Google"}
               </span>
               <div id="google-signin-button" className="w-full flex justify-center mt-1"></div>
-              {/* GSI 버튼 렌더링 실패 시 폴백 버튼 */}
+              {/* 네이티브 앱: Capacitor GoogleAuth 플러그인 / 웹: GSI 폴백 버튼 */}
               {googleClientId && (
                 <button
                   onClick={() => {
-                    // GSI 라이브러리로 직접 One Tap 팝업 트리거
-                    if ((window as any).google?.accounts?.id) {
+                    const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+                    if (isNative) {
+                      handleCapacitorGoogleLogin();
+                    } else if ((window as any).google?.accounts?.id) {
                       (window as any).google.accounts.id.prompt();
                     } else {
-                      // GSI 로드 안 됐으면 스크립트 재로드 후 재시도
                       const s = document.createElement("script");
                       s.src = "https://accounts.google.com/gsi/client";
                       s.onload = () => {
