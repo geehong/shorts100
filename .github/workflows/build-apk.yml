@@ -55,9 +55,29 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: shorts100-release-${{ github.run_number }}
           path: frontend/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
+
+      - name: Deploy APK to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: frontend/android/app/build/outputs/apk/release/app-release.apk
+          target: /home/geehong/shorts100.com/frontend/public/
+          strip_components: 7
+
+      - name: Rename APK on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            mv /home/geehong/shorts100.com/frontend/public/app-release.apk \
+               /home/geehong/shorts100.com/frontend/public/shorts100.apk
