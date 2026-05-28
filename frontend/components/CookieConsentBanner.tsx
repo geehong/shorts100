@@ -59,7 +59,7 @@ export default function CookieConsentBanner() {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md z-50 animate-slide-up">
+    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:max-w-md z-50 animate-slide-up">
       <div className="bg-slate-900/95 backdrop-blur-md border border-slate-800 text-white rounded-3xl p-5 shadow-[0_20px_50px_rgba(0,0,0,0.3)] transition-all">
         <div className="flex items-start justify-between gap-3">
           <div>
