@@ -1,4 +1,4 @@
-package com.shorts100.app;
+package com.Shorts100.app;
 
 import android.os.Bundle;
 import android.webkit.WebSettings;
