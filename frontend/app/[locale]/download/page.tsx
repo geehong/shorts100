@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
+import AppInstallButton from "@/components/AppInstallButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
 
@@ -513,20 +514,8 @@ export default function DownloadPage() {
             <span className="text-blue-600">ShortsDown</span>
           </h1>
 
-          {/* APK 앱 설치 버튼 - 웹에서만 표시 */}
-          {!(typeof window !== "undefined" && (window as any).Capacitor?.isNativePlatform?.()) && (
-            <button
-              onClick={() => { window.location.href = "/shorts100.apk"; }}
-              title="앱 다운로드 (APK)"
-              className="flex items-center gap-1 text-[9px] font-bold px-2 py-1 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-all"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 16L12 4M12 16l-4-4M12 16l4-4"/>
-                <path d="M3 20h18"/>
-              </svg>
-              App
-            </button>
-          )}
+          {/* APK 앱 설치 버튼 (웹) 또는 웹페이지 링크 (앱) */}
+          <AppInstallButton />
 
           {/* 잔여 횟수 뱃지 */}
           <div className="bg-violet-100 text-violet-600 px-3 py-1 rounded-full font-black text-[10px] shadow-sm whitespace-nowrap shrink-0">
