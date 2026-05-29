@@ -15,7 +15,7 @@ export default function AppInstallButton() {
 
   const handleClick = () => {
     if (isNative) {
-      window.open("https://shorts100.com", "_system");
+      window.open("https://shorts100.firemarkets.net/", "_system");
     } else {
       window.location.href = "/shorts100.apk";
     }
