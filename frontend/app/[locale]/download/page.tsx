@@ -5,8 +5,6 @@ import { useRouter, useParams } from "next/navigation";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 import AppInstallButton from "@/components/AppInstallButton";
 import Footer from "@/components/Footer";
-import { Capacitor } from "@capacitor/core";
-import { Browser } from "@capacitor/browser";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
 
@@ -491,15 +489,10 @@ export default function DownloadPage() {
     }
   };
 
-  const handleMainAction = async () => {
+  const handleMainAction = () => {
     if (result) {
       // Trigger direct download of file
-      const downloadUrl = `${API_BASE}/api/download/serve/${result.file_token}?dl=1`;
-      if (Capacitor.isNativePlatform()) {
-        await Browser.open({ url: downloadUrl });
-      } else {
-        window.location.href = downloadUrl;
-      }
+      window.location.href = `${API_BASE}/api/download/serve/${result.file_token}?dl=1`;
     } else {
       handleDownloadPrepare();
     }
