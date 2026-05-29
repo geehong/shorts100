@@ -1447,12 +1447,14 @@ async def serve_download(
         raise HTTPException(status_code=404, detail="File does not exist on server")
         
     headers = {}
+    media_type = "video/mp4"
     if dl == 1:
         headers["Content-Disposition"] = f'attachment; filename="shortsdown_{file_token[:8]}.mp4"'
+        media_type = "application/octet-stream"
         
     return FileResponse(
         path=log.local_path,
-        media_type="video/mp4",
+        media_type=media_type,
         headers=headers
     )
 
