@@ -39,6 +39,7 @@ export default function CookieConsentBanner() {
     const data = { analytics: true, advertising: true };
     localStorage.setItem("shorts100_consent", JSON.stringify(data));
     sendConsent(data);
+    window.dispatchEvent(new Event("shorts100_consent_updated"));
     setVisible(false);
   };
 
@@ -46,6 +47,7 @@ export default function CookieConsentBanner() {
     const data = { analytics: false, advertising: false };
     localStorage.setItem("shorts100_consent", JSON.stringify(data));
     sendConsent(data);
+    window.dispatchEvent(new Event("shorts100_consent_updated"));
     setVisible(false);
   };
 
@@ -53,6 +55,7 @@ export default function CookieConsentBanner() {
     const data = { analytics, advertising };
     localStorage.setItem("shorts100_consent", JSON.stringify(data));
     sendConsent(data);
+    window.dispatchEvent(new Event("shorts100_consent_updated"));
     setVisible(false);
   };
 
@@ -106,7 +109,7 @@ export default function CookieConsentBanner() {
             onClick={() => setShowDetails(!showDetails)}
             className="text-slate-400 hover:text-white px-3 py-2 rounded-xl transition-all"
           >
-            {showDetails ? "닫기" : "설정"}
+            {showDetails ? t("close") : t("settings")}
           </button>
           
           {showDetails ? (
@@ -114,7 +117,7 @@ export default function CookieConsentBanner() {
               onClick={handleCustomSave}
               className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-xl transition-all"
             >
-              선택 저장
+              {t("saveSelection")}
             </button>
           ) : (
             <>

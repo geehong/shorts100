@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 import AppInstallButton from "@/components/AppInstallButton";
+import Footer from "@/components/Footer";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
 
@@ -22,6 +23,9 @@ const translations = {
     guestLimit: "Guest : {left}번",
     memberLimit: "Member : {points}번",
     masterLimit: "Master : 무제한",
+    limitGuideTitle: "다운로드 제한 및 크레딧 충전 안내",
+    limitGuideGuest: "비회원(Guest)은 최초 5회까지 다운로드 가능합니다. 회원가입 시 무료 20 크레딧이 즉시 지급되며, 로그인 후 추가 크레딧 충전(+50)이 가능합니다.",
+    limitGuideMember: "회원은 다운로드당 1 크레딧이 차감됩니다. 크레딧이 부족할 경우 아래 '크레딧 충전 (+50)' 버튼으로 충전할 수 있습니다.",
     errors: {
       PRIVATE_VIDEO: "비공개 동영상이거나 연령 제한이 있습니다.",
       DELETED_VIDEO: "삭제되었거나 존재하지 않는 동영상입니다.",
@@ -44,6 +48,9 @@ const translations = {
     guestLimit: "Guest : {left} times",
     memberLimit: "Member : {points} times",
     masterLimit: "Master : Unlimited",
+    limitGuideTitle: "Download Limits & Refill Guide",
+    limitGuideGuest: "Guests are limited to 5 free downloads. Sign up to get 20 free credits immediately, and log in to refill credits (+50).",
+    limitGuideMember: "Members spend 1 credit per download. If you run out, refill (+50) using the button below.",
     errors: {
       PRIVATE_VIDEO: "This video is private or age-restricted.",
       DELETED_VIDEO: "This video has been deleted or is unavailable.",
@@ -224,7 +231,11 @@ export default function DownloadPage() {
     } catch (e: any) {
       const code = e?.error ?? e?.code ?? JSON.stringify(e);
       if (code !== "popup_closed_by_user" && code !== "12501") {
-        setAuthMessage(`Google 로그인 오류: ${code}`);
+        setAuthMessage(
+          lang === "ko"
+            ? "구글 로그인에 실패했습니다. 잠시 후 다시 시도해주세요."
+            : "Google login failed. Please try again in a moment."
+        );
       }
     }
   };
@@ -699,6 +710,16 @@ export default function DownloadPage() {
             </a>
           </div>
         )}
+        {/* Limits & Refill Guide Card */}
+        <div className="bg-amber-50/50 border border-amber-100 rounded-3xl p-5 mt-6 shadow-sm flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">💡</span>
+            <span className="text-xs font-black text-amber-900">{t.limitGuideTitle}</span>
+          </div>
+          <p className="text-[11px] text-amber-800 leading-relaxed font-semibold">
+            {!authToken ? t.limitGuideGuest : t.limitGuideMember}
+          </p>
+        </div>
 
         {/* Auth / Login form at the bottom */}
         {!authToken ? (
@@ -835,11 +856,7 @@ export default function DownloadPage() {
       </div>
 
       {/* Footer */}
-      <footer className="text-center py-4 border-t border-gray-100 mx-4">
-        <p className="text-[9px] font-bold text-gray-400">
-          © {new Date().getFullYear()} Shorts100 ShortsDown. All rights reserved.
-        </p>
-      </footer>
+      <Footer lang={uiLang} />
       {showOnboarding && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-100 flex flex-col gap-4 relative animate-in fade-in zoom-in-95 duration-200">

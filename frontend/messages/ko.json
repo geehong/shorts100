@@ -10,8 +10,8 @@
     "subtitle": "지금 가장 핫한 숏폼 영상 모음"
   },
   "rising": {
-    "title": "주목할 신인 크리에이터",
-    "subtitle": "빠르게 성장 중인 채널들"
+    "title": "급상승 쇼츠",
+    "subtitle": "지금 빠르게 오르는 영상들"
   },
   "cookie": {
     "title": "쿠키 사용 동의",
@@ -20,7 +20,10 @@
     "acceptAll": "모두 동의",
     "decline": "거부",
     "analytics": "분석 쿠키",
-    "advertising": "광고 쿠키"
+    "advertising": "광고 쿠키",
+    "close": "닫기",
+    "settings": "설정",
+    "saveSelection": "선택 저장"
   },
   "errors": {
     "loadFailed": "데이터를 불러오지 못했습니다.",

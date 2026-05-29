@@ -60,7 +60,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://shorts100.firemarkets.net", "http://localhost:3000"],
+    allow_origins=[
+        "https://shorts100.firemarkets.net",
+        "http://localhost:3000",
+        "https://shorts100.com",
+        "https://www.shorts100.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -10,8 +10,8 @@
     "subtitle": "Collection of the hottest short-form videos right now"
   },
   "rising": {
-    "title": "Rising Creators to Watch",
-    "subtitle": "Channels growing rapidly"
+    "title": "Trending Shorts",
+    "subtitle": "Videos rising rapidly right now"
   },
   "cookie": {
     "title": "Cookie Consent",
@@ -20,7 +20,10 @@
     "acceptAll": "Accept All",
     "decline": "Decline",
     "analytics": "Analytics Cookies",
-    "advertising": "Advertising Cookies"
+    "advertising": "Advertising Cookies",
+    "close": "Close",
+    "settings": "Settings",
+    "saveSelection": "Save Selection"
   },
   "errors": {
     "loadFailed": "Failed to load data.",

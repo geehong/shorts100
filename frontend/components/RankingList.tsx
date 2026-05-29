@@ -6,6 +6,7 @@ import { useRouter, useParams } from "next/navigation";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { fetchRankingsClient, searchVideosClient } from "@/lib/api";
 import AppInstallButton from "@/components/AppInstallButton";
+import Footer from "@/components/Footer";
 
 export interface RankingItem {
   id: number;
@@ -965,6 +966,7 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
             <p className="text-xs text-violet-200">{T[lang].lastVideo}</p>
           )}
         </div>
+        <Footer lang={lang} />
       </div>
 
     </div>
