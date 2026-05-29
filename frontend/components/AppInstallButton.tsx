@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 
 export default function AppInstallButton() {
   const params = useParams();
@@ -13,9 +14,9 @@ export default function AppInstallButton() {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
 
-  const handleClick = () => {
+  const handleClick = async () => {
     if (isNative) {
-      window.open("https://shorts100.firemarkets.net/", "_system");
+      await Browser.open({ url: "https://shorts100.firemarkets.net/" });
     } else {
       window.location.href = "/shorts100.apk";
     }
