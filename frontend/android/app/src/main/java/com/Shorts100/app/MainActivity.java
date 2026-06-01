@@ -1,6 +1,11 @@
 package com.Shorts100.app;
 
 import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -12,6 +17,8 @@ import com.getcapacitor.BridgeActivity;
 import com.codetrixstudio.capacitor.GoogleAuth.GoogleAuth;
 
 public class MainActivity extends BridgeActivity {
+    private BroadcastReceiver onDownloadCompleteReceiver;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(GoogleAuth.class);
@@ -78,5 +85,83 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         });
+
+        // BroadcastReceiver to notify user when a download completes and show where it was saved
+        onDownloadCompleteReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                try {
+                    long referenceId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+                    if (referenceId == -1) return;
+
+                    DownloadManager.Query query = new DownloadManager.Query();
+                    query.setFilterById(referenceId);
+                    
+                    DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                    Cursor cursor = dm.query(query);
+                    
+                    if (cursor != null) {
+                        if (cursor.moveToFirst()) {
+                            int statusColumn = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                            if (statusColumn != -1) {
+                                int status = cursor.getInt(statusColumn);
+                                if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                    String title = "";
+                                    int titleColumn = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE);
+                                    if (titleColumn != -1) {
+                                        title = cursor.getString(titleColumn);
+                                    }
+
+                                    String localUri = "";
+                                    int localUriColumn = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+                                    if (localUriColumn != -1) {
+                                        localUri = cursor.getString(localUriColumn);
+                                    }
+
+                                    String pathDisplay = "Download 폴더";
+                                    if (localUri != null && !localUri.isEmpty()) {
+                                        Uri uri = Uri.parse(localUri);
+                                        String path = uri.getPath();
+                                        if (path != null) {
+                                            int downloadIdx = path.indexOf("Download");
+                                            if (downloadIdx >= 0) {
+                                                pathDisplay = "내장 메모리 > " + path.substring(downloadIdx);
+                                            } else {
+                                                pathDisplay = path;
+                                            }
+                                        }
+                                    }
+
+                                    Toast.makeText(getApplicationContext(), 
+                                        "다운로드 완료!\n파일명: " + title + "\n저장 위치: " + pathDisplay, 
+                                        Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        }
+                        cursor.close();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            registerReceiver(onDownloadCompleteReceiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(onDownloadCompleteReceiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (onDownloadCompleteReceiver != null) {
+            try {
+                unregisterReceiver(onDownloadCompleteReceiver);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
