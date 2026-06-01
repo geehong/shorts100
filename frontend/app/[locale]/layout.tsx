@@ -22,6 +22,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params;
   const isKo = locale === "ko";
+  const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://shorts100.com";
 
   const title = isKo
     ? "Shorts100 - 오늘의 쇼츠 TOP 100 및 무료 다운로더"
@@ -39,7 +40,7 @@ export async function generateMetadata({
     title,
     description,
     keywords,
-    metadataBase: new URL("https://shorts100.com"),
+    metadataBase: new URL(BASE_URL),
     alternates: {
       canonical: `/${locale}`,
       languages: {
@@ -50,7 +51,7 @@ export async function generateMetadata({
     openGraph: {
       title,
       description,
-      url: `https://shorts100.com/${locale}`,
+      url: `${BASE_URL}/${locale}`,
       siteName: "Shorts100",
       images: [
         {
@@ -71,6 +72,9 @@ export async function generateMetadata({
     },
     verification: {
       google: "google74dd62898b34f416",
+      other: {
+        "naver-site-verification": "3ab562056d3b96c2bad09c09f9f6a67a47f44a66",
+      },
     },
     appleWebApp: {
       capable: true,

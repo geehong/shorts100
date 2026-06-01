@@ -90,6 +90,8 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - NEXT_PUBLIC_SITE_URL=https://shorts100.firemarkets.net
+      - SITE_URL=https://shorts100.firemarkets.net
       - NEXT_PUBLIC_API_URL=https://shorts100.firemarkets.net
       - BACKEND_API_URL=http://shorts100-be:8000
       - NODE_ENV=production

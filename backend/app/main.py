@@ -1450,7 +1450,6 @@ async def serve_download(
     media_type = "video/mp4"
     if dl == 1:
         headers["Content-Disposition"] = f'attachment; filename="shortsdown_{file_token[:8]}.mp4"'
-        media_type = "application/octet-stream"
         
     return FileResponse(
         path=log.local_path,

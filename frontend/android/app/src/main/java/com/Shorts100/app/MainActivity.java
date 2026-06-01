@@ -29,11 +29,41 @@ public class MainActivity extends BridgeActivity {
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
                 try {
                     DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                    request.setMimeType(mimetype);
                     
-                    String filename = URLUtil.guessFileName(url, contentDisposition, mimetype);
+                    // Manually parse the filename from Content-Disposition to prevent URLUtil.guessFileName from overriding it to .bin when mimetype is application/octet-stream
+                    String filename = null;
+                    if (contentDisposition != null) {
+                        int index = contentDisposition.indexOf("filename=");
+                        if (index > 0) {
+                            filename = contentDisposition.substring(index + 9);
+                            if (filename.startsWith("\"")) {
+                                filename = filename.substring(1);
+                                int endIndex = filename.indexOf("\"");
+                                if (endIndex > 0) {
+                                    filename = filename.substring(0, endIndex);
+                                }
+                            } else {
+                                int endIndex = filename.indexOf(";");
+                                if (endIndex > 0) {
+                                    filename = filename.substring(0, endIndex);
+                                }
+                            }
+                            filename = filename.trim();
+                        }
+                    }
+                    if (filename == null || filename.isEmpty()) {
+                        filename = URLUtil.guessFileName(url, contentDisposition, mimetype);
+                    }
+
                     request.setTitle(filename);
                     request.setDescription("Downloading video...");
+                    
+                    // Force video/mp4 MIME type if filename ends with .mp4 to make sure Android handles and scans it correctly as a video
+                    if (filename.endsWith(".mp4")) {
+                        request.setMimeType("video/mp4");
+                    } else {
+                        request.setMimeType(mimetype);
+                    }
                     
                     request.allowScanningByMediaScanner();
                     request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
