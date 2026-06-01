@@ -4,7 +4,34 @@
 
 ---
 
-## 📱 최신 버전: v1.0.3 (Build #31)
+## 📱 최신 버전: v1.0.4 (Build #32)
+- **작성일**: 2026-06-01
+- **버전 이름 (versionName)**: `1.0.4`
+- **버전 코드 (versionCode)**: `5`
+- **배포 대상**: Google Play Console 비공개 테스트 트랙 (20인 대상)
+
+### 🛠️ 주요 변경 및 개선 사항
+1. **동영상 다운로드 파일 확장자 오류 수정 (.bin ➡️ .mp4)**
+   - 앱 및 웹 환경에서 동영상 다운로드 시 파일 확장자가 `.bin`으로 잘못 지정되던 현상을 해결하기 위해, 다운로드 MIME 타입을 `video/mp4`로 수정 및 복원했습니다.
+   - 기존 설치된 앱 사용자 또한 별도 재설치 없이 바로 정상적인 `.mp4` 동영상 파일로 안정적으로 다운로드 가능합니다.
+2. **다운로드 완료 시 저장 경로 및 파일명 실시간 팝업 안내**
+   - 동영상 다운로드가 완료되는 즉시 앱 내에서 파일명과 정확한 기기 내 저장 경로(예: `"내장 메모리 > Download > shortsdown_xxxx.mp4"`)를 Toast 메시지로 안내하는 기능을 추가했습니다.
+   - 안드로이드 14(API 34) 이상의 최신 기기에서도 앱이 비정상 종료(Crash)되지 않도록 `BroadcastReceiver` 등록 시 수신 속성(`RECEIVER_EXPORTED`)을 안전하게 처리했습니다.
+
+### 📋 구글 플레이 콘솔 입력용 출시 노트 (v1.0.4)
+```xml
+<ko-KR>
+- 동영상 다운로드 시 파일 확장자가 .bin으로 저장되던 현상을 수정하고, 다운로드 완료 시 파일명과 실제 기기 내 저장 폴더 경로를 실시간 팝업으로 안내하도록 개선하였습니다.
+</ko-KR>
+
+<en-US>
+- Fixed an issue where downloaded videos were saved with a .bin extension, and added a real-time toast notification displaying the file name and the storage path upon download completion.
+</en-US>
+```
+
+---
+
+## 📱 이전 버전: v1.0.3 (Build #31)
 - **작성일**: 2026-05-29
 - **버전 이름 (versionName)**: `1.0.3`
 - **버전 코드 (versionCode)**: `4`
