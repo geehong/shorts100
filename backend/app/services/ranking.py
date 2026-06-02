@@ -41,11 +41,14 @@ def compute_rising_score(
     view_count: int,
     like_count: int,
     published_at: datetime,
+    freshness_half_life_hours: float = 12.0,
 ) -> float:
-    """Rising Star 점수 = 시간당 조회수(속도) × 좋아요 가중치.
+    """Rising Star("New") 점수 = 시간당 조회수(속도) × 좋아요 가중치 × 신선도 감쇠.
 
-    신규 영상일수록 속도가 높으면 유리하다.
-    7일 이상 된 영상은 Rising 대상에서 제외(호출 전 필터링).
+    - velocity(시간당 조회수)로 "빠르게 뜨는" 영상을 잡고,
+    - freshness 감쇠로 "방금 올라온" 영상에 가중치를 줘서
+      누적 조회수만 큰 오래된 영상이 밀려나도록 한다.
+    호출 전 48시간 이내 영상으로 필터링하는 것을 전제로 한다.
     """
     now = datetime.now(timezone.utc)
     if published_at.tzinfo is None:
@@ -60,7 +63,10 @@ def compute_rising_score(
         ratio = like_count / view_count
         engagement_boost = 1.0 + min(ratio * 10, 0.5)  # 최대 1.5배
 
-    return velocity * engagement_boost
+    # 신선도 감쇠: 갓 올라온 영상일수록 1.0에 가깝고, 오래될수록 빠르게 작아진다.
+    freshness = math.pow(0.5, age_hours / freshness_half_life_hours)
+
+    return velocity * engagement_boost * freshness
 
 
 def apply_region_filter(query, region_code: str):

@@ -11,6 +11,7 @@ class Ranking(Base):
     rank_type: Mapped[str] = mapped_column(String(32), nullable=False)  # 'global' or category
     score: Mapped[float] = mapped_column(Float, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    prev_position: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = 신규 진입
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # 관계 설정

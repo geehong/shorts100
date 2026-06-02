@@ -449,20 +449,26 @@ async def _compute_global_rankings():
         scored_videos.sort(key=lambda x: x[1], reverse=True)
         top_100 = scored_videos[:100]
 
-        # 5. DB 업데이트 (기존 global 랭킹 삭제 후 삽입)
+        # 5. DB 업데이트 (기존 global 랭킹 삭제 전 이전 순위 저장)
+        old_rows = (await session.execute(
+            select(Ranking.video_id, Ranking.position).where(Ranking.rank_type == "global")
+        )).all()
+        prev_pos_map = {r.video_id: r.position for r in old_rows}
+
         await session.execute(delete(Ranking).where(Ranking.rank_type == "global"))
 
         ranking_objects = []
         cache_data = []
         for i, (video, score) in enumerate(top_100):
             pos = i + 1
+            prev_pos = prev_pos_map.get(video.id)  # None = 신규 진입
             ranking_objects.append(Ranking(
                 video_id=video.id,
                 rank_type="global",
                 score=score,
-                position=pos
+                position=pos,
+                prev_position=prev_pos,
             ))
-            # 캐시 저장용 데이터 구성
             cache_data.append({
                 "id": video.id,
                 "title": video.title,
@@ -472,6 +478,7 @@ async def _compute_global_rankings():
                 "like_count": video.like_count,
                 "score": score,
                 "position": pos,
+                "prev_position": prev_pos,
                 "platform_video_id": video.platform_video_id,
                 "category": video.category.value if video.category else None,
                 "published_at": video.published_at.isoformat() if video.published_at else None,
@@ -494,12 +501,16 @@ def compute_rising_rankings():
 
 
 async def _compute_rising_rankings():
-    """7일 이내 Shorts 영상 중 시간당 조회수 속도가 빠른 영상 TOP 50."""
+    """48시간 이내 Shorts 영상 중 속도×신선도 점수가 높은 영상 TOP 50.
+
+    "New" 탭 전용: 누적 조회수만 큰 오래된 영상이 아니라
+    방금 올라와서 빠르게 뜨는 영상을 노출하기 위해 창을 48시간으로 좁힌다.
+    """
     from app.models import Video, Ranking
     from datetime import timedelta
 
     now_utc = datetime.now(timezone.utc)
-    cutoff = now_utc - timedelta(days=7)
+    cutoff = now_utc - timedelta(hours=48)
 
     async with _make_async_session()() as session:
         stmt = (
@@ -528,17 +539,24 @@ async def _compute_rising_rankings():
         scored.sort(key=lambda x: x[1], reverse=True)
         top_50 = scored[:50]
 
+        old_rows = (await session.execute(
+            select(Ranking.video_id, Ranking.position).where(Ranking.rank_type == "rising")
+        )).all()
+        prev_pos_map = {r.video_id: r.position for r in old_rows}
+
         await session.execute(delete(Ranking).where(Ranking.rank_type == "rising"))
 
         ranking_objects = []
         cache_data = []
         for i, (video, score) in enumerate(top_50):
             pos = i + 1
+            prev_pos = prev_pos_map.get(video.id)
             ranking_objects.append(Ranking(
                 video_id=video.id,
                 rank_type="rising",
                 score=score,
                 position=pos,
+                prev_position=prev_pos,
             ))
             cache_data.append({
                 "id": video.id,
@@ -549,6 +567,7 @@ async def _compute_rising_rankings():
                 "like_count": video.like_count,
                 "score": score,
                 "position": pos,
+                "prev_position": prev_pos,
                 "platform_video_id": video.platform_video_id,
                 "category": video.category.value if video.category else None,
                 "published_at": video.published_at.isoformat() if video.published_at else None,
@@ -604,7 +623,15 @@ async def _compute_category_rankings():
         m_l, s_l = get_stats(all_likes)
         m_c, s_c = get_stats(all_comments)
 
-        # 기존 카테고리 랭킹 전체 삭제
+        # 기존 카테고리 랭킹 이전 순위 저장 후 전체 삭제
+        old_cat_rows = (await session.execute(
+            select(Ranking.video_id, Ranking.rank_type, Ranking.position)
+            .where(Ranking.rank_type.like("category:%"))
+        )).all()
+        prev_cat_pos_map: dict[str, dict[int, int]] = {}
+        for r in old_cat_rows:
+            prev_cat_pos_map.setdefault(r.rank_type, {})[r.video_id] = r.position
+
         for cat in CategoryEnum:
             await session.execute(
                 delete(Ranking).where(Ranking.rank_type == f"category:{cat.value}")
@@ -612,6 +639,9 @@ async def _compute_category_rankings():
 
         all_ranking_objects = []
         for cat_value, cat_videos in by_category.items():
+            rank_type_key = f"category:{cat_value}"
+            prev_pos_map = prev_cat_pos_map.get(rank_type_key, {})
+
             scored = []
             for v in cat_videos:
                 vz = calculate_z_score(float(v.view_count), m_v, s_v)
@@ -627,11 +657,13 @@ async def _compute_category_rankings():
             cache_data = []
             for i, (video, score) in enumerate(top_50):
                 pos = i + 1
+                prev_pos = prev_pos_map.get(video.id)
                 all_ranking_objects.append(Ranking(
                     video_id=video.id,
-                    rank_type=f"category:{cat_value}",
+                    rank_type=rank_type_key,
                     score=score,
                     position=pos,
+                    prev_position=prev_pos,
                 ))
                 cache_data.append({
                     "id": video.id,
@@ -641,6 +673,7 @@ async def _compute_category_rankings():
                     "view_count": video.view_count,
                     "score": score,
                     "position": pos,
+                    "prev_position": prev_pos,
                     "platform_video_id": video.platform_video_id,
                     "category": cat_value,
                     "like_count": video.like_count,
@@ -1293,17 +1326,24 @@ async def _compute_today_delta_rankings():
         scored.sort(key=lambda x: x[1], reverse=True)
         top_50 = scored[:50]
 
+        old_rows = (await session.execute(
+            select(Ranking.video_id, Ranking.position).where(Ranking.rank_type == "today_delta")
+        )).all()
+        prev_pos_map = {r.video_id: r.position for r in old_rows}
+
         await session.execute(delete(Ranking).where(Ranking.rank_type == "today_delta"))
 
         ranking_objects = []
         cache_data = []
         for i, (video, delta) in enumerate(top_50):
             pos = i + 1
+            prev_pos = prev_pos_map.get(video.id)
             ranking_objects.append(Ranking(
                 video_id=video.id,
                 rank_type="today_delta",
                 score=float(delta),
                 position=pos,
+                prev_position=prev_pos,
             ))
             cache_data.append({
                 "id": video.id,
@@ -1314,6 +1354,7 @@ async def _compute_today_delta_rankings():
                 "view_delta": delta,
                 "score": float(delta),
                 "position": pos,
+                "prev_position": prev_pos,
                 "platform_video_id": video.platform_video_id,
                 "category": video.category.value if video.category else None,
                 "published_at": video.published_at.isoformat() if video.published_at else None,
