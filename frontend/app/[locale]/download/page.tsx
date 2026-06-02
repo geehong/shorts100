@@ -32,6 +32,7 @@ const translations = {
       UNSUPPORTED_URL: "지원하지 않는 URL 주소입니다. (주소를 다시 확인해주세요)",
       DOWNLOAD_FAILED: "비디오 다운로드에 실패했습니다. 다시 시도해주세요.",
       LIMIT_EXCEEDED: "다운로드 제한을 초과했습니다. 회원가입을 하거나 충전해주세요.",
+      REFILL_LIMIT_EXCEEDED: "크레딧 충전은 24시간에 1회만 가능합니다.",
       generic: "오류가 발생했습니다. 주소를 확인하고 다시 시도해주세요."
     }
   },
@@ -57,6 +58,7 @@ const translations = {
       UNSUPPORTED_URL: "Unsupported URL. Please check the address.",
       DOWNLOAD_FAILED: "Video download failed. Please try again.",
       LIMIT_EXCEEDED: "Download limit exceeded. Please register or top up.",
+      REFILL_LIMIT_EXCEEDED: "Credits can only be refilled once every 24 hours.",
       generic: "An error occurred. Please check the URL and try again."
     }
   }
@@ -447,9 +449,13 @@ export default function DownloadPage() {
         const data = await res.json();
         setUser(data.user);
         fetchLimits(authToken);
+      } else if (res.status === 429) {
+        setAuthMessage(t.errors.REFILL_LIMIT_EXCEEDED);
+      } else {
+        setAuthMessage(lang === "ko" ? "충전에 실패했습니다." : "Refill failed.");
       }
     } catch {
-      setAuthMessage("Upgrade failed");
+      setAuthMessage(lang === "ko" ? "충전에 실패했습니다." : "Refill failed.");
     }
   };
 

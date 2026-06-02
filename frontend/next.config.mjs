@@ -19,6 +19,14 @@ const nextConfig = {
       { protocol: "https", hostname: "example.com" },
     ],
   },
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${process.env.BACKEND_API_URL || "http://shorts100-be:8000"}/api/:path*`,
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);

@@ -36,12 +36,14 @@ async def get_download_limits(
         }
     from sqlalchemy import func
     client_ip = get_client_ip(request)
-    session_id = request.cookies.get("sid") or "unknown_sid"
+    session_id = request.cookies.get("sid")
     since = datetime.now(timezone.utc) - timedelta(days=1)
+    ip_filter = DownloadLog.guest_ip == client_ip
+    id_filter = (ip_filter | (DownloadLog.guest_session_id == session_id)) if session_id else ip_filter
     stmt = (
         select(func.count(DownloadLog.id))
         .where(DownloadLog.user_id == None)
-        .where((DownloadLog.guest_ip == client_ip) | (DownloadLog.guest_session_id == session_id))
+        .where(id_filter)
         .where(DownloadLog.created_at >= since)
     )
     downloads_count = (await db.execute(stmt)).scalar() or 0
@@ -60,7 +62,7 @@ async def prepare_download(
         raise HTTPException(status_code=400, detail="URL cannot be empty")
 
     client_ip = get_client_ip(request) if not current_user else None
-    session_id = request.cookies.get("sid") or "unknown_sid" if not current_user else None
+    session_id = request.cookies.get("sid") if not current_user else None
 
     req_log = DownloadRequestLog(
         user_id=current_user.id if current_user else None,
@@ -81,15 +83,17 @@ async def prepare_download(
         else:
             from sqlalchemy import func
             client_ip_guest = get_client_ip(request)
-            session_id_guest = request.cookies.get("sid") or "unknown_sid"
+            session_id_guest = request.cookies.get("sid")
             since = datetime.now(timezone.utc) - timedelta(days=1)
+            ip_filter = DownloadLog.guest_ip == client_ip_guest
+            id_filter = (ip_filter | (DownloadLog.guest_session_id == session_id_guest)) if session_id_guest else ip_filter
             stmt = (
                 select(func.count(DownloadLog.id))
                 .where(DownloadLog.user_id == None)
-                .where((DownloadLog.guest_ip == client_ip_guest) | (DownloadLog.guest_session_id == session_id_guest))
+                .where(id_filter)
                 .where(DownloadLog.created_at >= since)
             )
-            if (await db.execute(stmt)).scalar() or 0 >= 5:
+            if ((await db.execute(stmt)).scalar() or 0) >= 5:
                 req_log.status = "limit_exceeded"
                 req_log.error_detail = "LIMIT_EXCEEDED"
                 await db.commit()
@@ -143,7 +147,7 @@ async def prepare_download(
         else:
             log = DownloadLog(
                 guest_ip=get_client_ip(request),
-                guest_session_id=request.cookies.get("sid") or "unknown_sid",
+                guest_session_id=request.cookies.get("sid"),
                 file_token=file_token, local_path=local_path,
                 original_url=url, expires_at=expires_at,
             )
@@ -201,9 +205,16 @@ async def upgrade_membership(
 ):
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+
+    from app.core.cache import cache
+    rate_key = f"upgrade_limit:{current_user.id}"
+    if await cache.get(rate_key):
+        raise HTTPException(status_code=429, detail="REFILL_LIMIT_EXCEEDED")
+
     current_user.role = "upgraded"
     current_user.points = current_user.points + 50
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+    await cache.setex(rate_key, 86400, "1")  # 24시간 1회 제한
     return {"status": "success", "user": {"username": current_user.username, "role": current_user.role, "points": current_user.points}}

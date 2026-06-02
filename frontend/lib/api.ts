@@ -1,7 +1,8 @@
 import { RankingItem } from "@/components/RankingList";
 
 const SERVER_API = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
-const CLIENT_API = process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
+// 브라우저에서 NEXT_PUBLIC_API_URL 미설정 시 Next.js rewrite 프록시(/api/*) 사용
+const CLIENT_API = process.env.NEXT_PUBLIC_API_URL || "";
 
 function rankingEndpoint(rankType: string): string {
   if (rankType === "rising") return "/api/rankings/rising";
@@ -41,10 +42,16 @@ export async function fetchRankingsClient(
   if (region) params.set("region", region);
   if (category) params.set("category", category);
   if (rankBasis) params.set("rank_basis", rankBasis);
+  params.set("_t", String(Date.now()));
 
-  const res = await fetch(`${CLIENT_API}${rankingEndpoint(rankType)}?${params}`);
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(`${CLIENT_API}${rankingEndpoint(rankType)}?${params}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch (error) {
+    console.error("fetchRankingsClient error:", error);
+    return [];
+  }
 }
 
 // server-side video detail
@@ -68,8 +75,14 @@ export async function searchVideosClient(
   params.set("q", q);
   params.set("limit", String(limit));
   params.set("offset", String(offset));
+  params.set("_t", String(Date.now()));
 
-  const res = await fetch(`${CLIENT_API}/api/videos/search?${params}`);
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(`${CLIENT_API}/api/videos/search?${params}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch (error) {
+    console.error("searchVideosClient error:", error);
+    return [];
+  }
 }
