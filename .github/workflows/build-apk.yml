@@ -54,7 +54,10 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName="1.0.${{ github.run_number }}" \
+            --no-daemon
 
       - name: Build release AAB (for Play Store)
         working-directory: frontend/android
@@ -64,7 +67,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ./gradlew bundleRelease --no-daemon
+          ./gradlew bundleRelease \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName="1.0.${{ github.run_number }}" \
+            --no-daemon
 
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
