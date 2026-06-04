@@ -22,6 +22,25 @@ class DownloadPrepareRequest(BaseModel):
     url: str
 
 
+async def _get_guest_download_count(db: AsyncSession, client_ip: str, session_id: str | None) -> int:
+    from sqlalchemy import func
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    ip_filter = DownloadLog.guest_ip == client_ip
+    id_filter = (ip_filter | (DownloadLog.guest_session_id == session_id)) if session_id else ip_filter
+    stmt = (
+        select(func.count(DownloadLog.id))
+        .where(DownloadLog.user_id == None)
+        .where(id_filter)
+        .where(DownloadLog.created_at >= since)
+    )
+    return (await db.execute(stmt)).scalar() or 0
+
+
+async def _get_guest_bonus(client_ip: str) -> int:
+    from app.core.cache import cache
+    return int(await cache.get(f"guest_bonus:{client_ip}") or 0)
+
+
 @router.get("/limits")
 async def get_download_limits(
     request: Request,
@@ -34,20 +53,46 @@ async def get_download_limits(
             "points": current_user.points,
             "limit_reached": False if current_user.role in ["master", "admin"] else current_user.points <= 0,
         }
-    from sqlalchemy import func
     client_ip = get_client_ip(request)
     session_id = request.cookies.get("sid")
-    since = datetime.now(timezone.utc) - timedelta(days=1)
-    ip_filter = DownloadLog.guest_ip == client_ip
-    id_filter = (ip_filter | (DownloadLog.guest_session_id == session_id)) if session_id else ip_filter
-    stmt = (
-        select(func.count(DownloadLog.id))
-        .where(DownloadLog.user_id == None)
-        .where(id_filter)
-        .where(DownloadLog.created_at >= since)
-    )
-    downloads_count = (await db.execute(stmt)).scalar() or 0
-    return {"role": "guest", "downloads_left": max(0, 5 - downloads_count), "limit_reached": downloads_count >= 5}
+    downloads_count = await _get_guest_download_count(db, client_ip, session_id)
+    bonus = await _get_guest_bonus(client_ip)
+    total_limit = 5 + bonus
+    return {
+        "role": "guest",
+        "downloads_left": max(0, total_limit - downloads_count),
+        "limit_reached": downloads_count >= total_limit,
+    }
+
+
+@router.post("/guest-refill")
+async def guest_ad_refill(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """게스트 광고 시청 후 다운로드 3회 충전"""
+    from app.core.cache import cache
+    client_ip = get_client_ip(request)
+    session_id = request.cookies.get("sid")
+
+    rate_key = f"guest_refill_rate:{client_ip}"
+    if await cache.get(rate_key):
+        raise HTTPException(status_code=429, detail="REFILL_LIMIT_EXCEEDED")
+
+    bonus_key = f"guest_bonus:{client_ip}"
+    current_bonus = int(await cache.get(bonus_key) or 0)
+    new_bonus = current_bonus + 3
+
+    await cache.setex(rate_key, 86400, "1")       # 24h 재충전 제한
+    await cache.setex(bonus_key, 172800, str(new_bonus))  # 보너스 2일 유지
+
+    downloads_count = await _get_guest_download_count(db, client_ip, session_id)
+    total_limit = 5 + new_bonus
+    return {
+        "role": "guest",
+        "downloads_left": max(0, total_limit - downloads_count),
+        "limit_reached": downloads_count >= total_limit,
+    }
 
 
 @router.post("/prepare")
@@ -81,19 +126,11 @@ async def prepare_download(
                 await db.commit()
                 raise HTTPException(status_code=403, detail="LIMIT_EXCEEDED")
         else:
-            from sqlalchemy import func
             client_ip_guest = get_client_ip(request)
             session_id_guest = request.cookies.get("sid")
-            since = datetime.now(timezone.utc) - timedelta(days=1)
-            ip_filter = DownloadLog.guest_ip == client_ip_guest
-            id_filter = (ip_filter | (DownloadLog.guest_session_id == session_id_guest)) if session_id_guest else ip_filter
-            stmt = (
-                select(func.count(DownloadLog.id))
-                .where(DownloadLog.user_id == None)
-                .where(id_filter)
-                .where(DownloadLog.created_at >= since)
-            )
-            if ((await db.execute(stmt)).scalar() or 0) >= 5:
+            downloads_count_guest = await _get_guest_download_count(db, client_ip_guest, session_id_guest)
+            bonus_guest = await _get_guest_bonus(client_ip_guest)
+            if downloads_count_guest >= 5 + bonus_guest:
                 req_log.status = "limit_exceeded"
                 req_log.error_detail = "LIMIT_EXCEEDED"
                 await db.commit()

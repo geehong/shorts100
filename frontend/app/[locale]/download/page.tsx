@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 import AppInstallButton from "@/components/AppInstallButton";
 import Footer from "@/components/Footer";
+import { showInterstitialAdForced, isNative } from "@/lib/admob";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://shorts100.firemarkets.net";
 
@@ -26,12 +27,16 @@ const translations = {
     limitGuideTitle: "다운로드 제한 및 크레딧 충전 안내",
     limitGuideGuest: "비회원(Guest)은 최초 5회까지 다운로드 가능합니다. 회원가입 시 무료 20 크레딧이 즉시 지급되며, 로그인 후 추가 크레딧 충전(+50)이 가능합니다.",
     limitGuideMember: "회원은 다운로드당 1 크레딧이 차감됩니다. 크레딧이 부족할 경우 아래 '크레딧 충전 (+50)' 버튼으로 충전할 수 있습니다.",
+    adRefillBtn: "광고 보고 3번 충전",
+    adRefillSuccess: "광고 시청 완료! 3번이 충전되었습니다.",
+    adRefillFail: "광고 재생에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    adRefillWebNote: "앱에서만 광고 충전이 가능합니다. 회원가입하면 즉시 20번을 드립니다!",
     errors: {
       PRIVATE_VIDEO: "비공개 동영상이거나 연령 제한이 있습니다.",
       DELETED_VIDEO: "삭제되었거나 존재하지 않는 동영상입니다.",
       UNSUPPORTED_URL: "지원하지 않는 URL 주소입니다. (주소를 다시 확인해주세요)",
       DOWNLOAD_FAILED: "비디오 다운로드에 실패했습니다. 다시 시도해주세요.",
-      LIMIT_EXCEEDED: "다운로드 제한을 초과했습니다. 회원가입을 하거나 충전해주세요.",
+      LIMIT_EXCEEDED: "다운로드 제한을 초과했습니다. 광고를 보고 3번 충전하거나 회원가입하세요.",
       REFILL_LIMIT_EXCEEDED: "크레딧 충전은 24시간에 1회만 가능합니다.",
       generic: "오류가 발생했습니다. 주소를 확인하고 다시 시도해주세요."
     }
@@ -52,12 +57,16 @@ const translations = {
     limitGuideTitle: "Download Limits & Refill Guide",
     limitGuideGuest: "Guests are limited to 5 free downloads. Sign up to get 20 free credits immediately, and log in to refill credits (+50).",
     limitGuideMember: "Members spend 1 credit per download. If you run out, refill (+50) using the button below.",
+    adRefillBtn: "Watch Ad to Get 3 Downloads",
+    adRefillSuccess: "Ad completed! 3 downloads added.",
+    adRefillFail: "Ad playback failed. Please try again.",
+    adRefillWebNote: "Ad refill is only available in the app. Sign up to get 20 free downloads!",
     errors: {
       PRIVATE_VIDEO: "This video is private or age-restricted.",
       DELETED_VIDEO: "This video has been deleted or is unavailable.",
       UNSUPPORTED_URL: "Unsupported URL. Please check the address.",
       DOWNLOAD_FAILED: "Video download failed. Please try again.",
-      LIMIT_EXCEEDED: "Download limit exceeded. Please register or top up.",
+      LIMIT_EXCEEDED: "Download limit exceeded. Watch an ad to get 3 more or register.",
       REFILL_LIMIT_EXCEEDED: "Credits can only be refilled once every 24 hours.",
       generic: "An error occurred. Please check the URL and try again."
     }
@@ -154,6 +163,7 @@ export default function DownloadPage() {
     points?: number;
     limit_reached: boolean;
   } | null>(null);
+  const [adRefilling, setAdRefilling] = useState(false);
 
   // Fetch Google Client ID configuration
   useEffect(() => {
@@ -459,6 +469,36 @@ export default function DownloadPage() {
     }
   };
 
+  const handleGuestAdRefill = async () => {
+    setAdRefilling(true);
+    setAuthMessage(null);
+    try {
+      const adShown = isNative()
+        ? await showInterstitialAdForced('ca-app-pub-1199110233969910/1701819854')
+        : false;
+
+      if (!adShown && isNative()) {
+        setAuthMessage(t.adRefillFail);
+        return;
+      }
+
+      const res = await fetch(`${API_BASE}/api/download/guest-refill`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setLimits(data);
+        setAuthMessage(t.adRefillSuccess);
+      } else if (res.status === 429) {
+        setAuthMessage(t.errors.REFILL_LIMIT_EXCEEDED);
+      } else {
+        setAuthMessage(t.adRefillFail);
+      }
+    } catch {
+      setAuthMessage(t.adRefillFail);
+    } finally {
+      setAdRefilling(false);
+    }
+  };
+
   const handleDownloadPrepare = async () => {
     setErrorMsg(null);
     setResult(null);
@@ -694,6 +734,43 @@ export default function DownloadPage() {
         {errorMsg && (
           <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-700 text-xs font-bold rounded-2xl">
             ⚠️ {errorMsg}
+          </div>
+        )}
+
+        {/* 게스트 광고 충전 카드 */}
+        {!authToken && limits?.role === "guest" && limits.limit_reached && (
+          <div className="mt-4 p-5 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-3xl flex flex-col gap-3 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📺</span>
+              <span className="text-sm font-black text-violet-800">
+                {lang === "ko" ? "다운로드 횟수 소진" : "Downloads Exhausted"}
+              </span>
+            </div>
+            <p className="text-[11px] text-violet-700 font-semibold leading-relaxed">
+              {lang === "ko"
+                ? "광고를 1회 시청하면 3번을 즉시 충전해드립니다. (24시간 1회 가능)"
+                : "Watch 1 ad to instantly get 3 more downloads. (Once per 24h)"}
+            </p>
+            {isNative() ? (
+              <>
+                <button
+                  onClick={handleGuestAdRefill}
+                  disabled={adRefilling}
+                  className="w-full py-3 bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 disabled:opacity-50 text-white font-extrabold rounded-2xl text-sm transition shadow-md"
+                >
+                  {adRefilling
+                    ? (lang === "ko" ? "광고 재생 중..." : "Loading ad...")
+                    : t.adRefillBtn}
+                </button>
+                {authMessage && (
+                  <p className="text-[11px] font-bold text-violet-700 text-center mt-1">{authMessage}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-[10px] text-violet-500 font-bold text-center">
+                {t.adRefillWebNote}
+              </p>
+            )}
           </div>
         )}
 

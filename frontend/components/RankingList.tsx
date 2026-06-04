@@ -7,6 +7,7 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { fetchRankingsClient, searchVideosClient } from "@/lib/api";
 import AppInstallButton from "@/components/AppInstallButton";
 import Footer from "@/components/Footer";
+import { showInterstitialAd } from "@/lib/admob";
 
 export interface RankingItem {
   id: number;
@@ -1082,6 +1083,7 @@ function ListView({ items, lang }: { items: RankingItem[]; lang: Lang }) {
             try {
               sessionStorage.setItem("s100_current_ids", JSON.stringify(items.map(i => i.id)));
             } catch (err) {}
+            showInterstitialAd('ca-app-pub-1199110233969910/1701819854');
             router.push(`/${locale}/v/${item.id}`);
           };
 
@@ -1247,6 +1249,7 @@ function BoxView({ items, lang }: { items: RankingItem[]; lang: Lang }) {
                     try {
                       sessionStorage.setItem("s100_current_ids", JSON.stringify(items.map(i => i.id)));
                     } catch (err) {}
+                    showInterstitialAd('ca-app-pub-1199110233969910/1701819854');
                     router.push(`/${locale}/v/${item.id}`);
                   };
 
