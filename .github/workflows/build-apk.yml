@@ -6,6 +6,7 @@ on:
     branches: [master]
     paths:
       - 'frontend/**'
+      - '!frontend/public/shorts100.apk'
 
 jobs:
   build:
