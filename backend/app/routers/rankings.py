@@ -36,7 +36,7 @@ CATEGORY_KOR_TO_ENG = {
 }
 
 _PERIOD_TO_CHART_TYPE = {
-    "realtime": "daily",
+    "realtime": "real",
     "today":    "daily",
     "weekly":   "weekly",
     "monthly":  "monthly",
@@ -86,6 +86,7 @@ async def _get_chart_entries(
     from app.services.ranking import apply_region_filter
 
     _STALENESS = {
+        "real":    timedelta(hours=8),
         "daily":   timedelta(days=2),
         "weekly":  timedelta(days=14),
         "monthly": timedelta(days=60),
@@ -135,6 +136,14 @@ async def _get_chart_entries(
         v = entry.video
         if not v:
             continue
+        if rank_basis == "algo":
+            score_val = entry.zscore or 0.0
+        elif rank_basis == "rising":
+            score_val = entry.velocity or 0.0
+        elif rank_basis == "view_delta":
+            score_val = float(entry.view_delta or 0)
+        else:  # view_count
+            score_val = float(entry.view_count or 0)
         result.append({
             "id": v.id,
             "title": v.title,
@@ -143,7 +152,7 @@ async def _get_chart_entries(
             "view_count": entry.view_count,
             "like_count": entry.like_count,
             "view_delta": entry.view_delta,
-            "score": entry.zscore or 0.0,
+            "score": score_val,
             "position": offset + i + 1,
             "prev_position": entry.prev_position,
             "platform_video_id": v.platform_video_id,
@@ -258,14 +267,8 @@ async def _get_ranking_list(
         import re
         if region:
             return 1.0
-        lang = (v.default_language or "")[:2].lower()
-        title = v.title or ""
-        if re.search(r'[ऀ-ॿ]', title): return 0.12
-        if re.search(r'[ঀ-৿]', title): return 0.10
-        if re.search(r'[஀-௿ఀ-౿ಀ-೿ഀ-ൿ]', title): return 0.10
-        if re.search(r'[؀-ۿ]', title): return 0.10
-        if re.search(r'[฀-๿က-႟]', title): return 0.15
-        return _LANG_WEIGHT.get(lang, _DEFAULT_WEIGHT)
+        from app.services.ranking import global_lang_weight
+        return global_lang_weight(v)
 
     if rank_basis == "view_delta":
         from sqlalchemy import func, desc as sa_desc
@@ -321,7 +324,10 @@ async def _get_ranking_list(
                 "channel_title": v.channel.title if v.channel else "",
                 "thumbnail_url": v.thumbnail_url,
                 "view_count": v.view_count, "like_count": v.like_count or 0,
-                "score": float(delta_val or 0), "position": offset + i + 1,
+                "score": float(delta_val or 0),
+                "position": offset + i + 1,
+                "prev_position": None,
+                "view_delta": float(delta_val or 0),
                 "platform_video_id": v.platform_video_id,
                 "published_at": v.published_at.isoformat() if v.published_at else None,
                 "category": v.category.value if v.category else None,
@@ -339,7 +345,22 @@ async def _get_ranking_list(
         if rank_basis == "rising" and videos:
             scored = [(v, compute_rising_score(v.view_count, v.like_count or 0, v.published_at) * _lang_weight(v)) for v in videos]
             scored.sort(key=lambda x: x[1], reverse=True)
-            videos = [x[0] for x in scored][offset: offset + limit]
+            return [
+                {
+                    "id": v.id, "title": v.title,
+                    "channel_title": v.channel.title,
+                    "thumbnail_url": v.thumbnail_url,
+                    "view_count": v.view_count, "like_count": v.like_count or 0,
+                    "score": score,
+                    "position": offset + i + 1,
+                    "prev_position": None,
+                    "view_delta": None,
+                    "platform_video_id": v.platform_video_id,
+                    "category": v.category.value if v.category else None,
+                    "published_at": v.published_at.isoformat() if v.published_at else None,
+                }
+                for i, (v, score) in enumerate(scored[offset: offset + limit])
+            ]
         elif rank_basis == "algo" and videos:
             views = [float(v.view_count) for v in videos]
             likes = [float(v.like_count or 0) for v in videos]
@@ -361,7 +382,22 @@ async def _get_ranking_list(
                 decay = calculate_decay(v.published_at)
                 scored.append((v, compute_final_score(vz, lz, cz, decay) * _lang_weight(v)))
             scored.sort(key=lambda x: x[1], reverse=True)
-            videos = [x[0] for x in scored][offset: offset + limit]
+            return [
+                {
+                    "id": v.id, "title": v.title,
+                    "channel_title": v.channel.title,
+                    "thumbnail_url": v.thumbnail_url,
+                    "view_count": v.view_count, "like_count": v.like_count or 0,
+                    "score": score,
+                    "position": offset + i + 1,
+                    "prev_position": None,
+                    "view_delta": None,
+                    "platform_video_id": v.platform_video_id,
+                    "category": v.category.value if v.category else None,
+                    "published_at": v.published_at.isoformat() if v.published_at else None,
+                }
+                for i, (v, score) in enumerate(scored[offset: offset + limit])
+            ]
         else:
             if not region:
                 scored = [(v, float(v.view_count) * _lang_weight(v)) for v in videos]
@@ -375,13 +411,11 @@ async def _get_ranking_list(
             "id": v.id, "title": v.title,
             "channel_title": v.channel.title,
             "thumbnail_url": v.thumbnail_url,
-            "view_count": v.view_count, "like_count": v.like_count,
-            "score": (
-                float(v.view_count) if rank_basis in ("view_count", "view_delta")
-                else compute_rising_score(v.view_count, v.like_count or 0, v.published_at) if rank_basis == "rising"
-                else float(v.view_count)
-            ),
+            "view_count": v.view_count, "like_count": v.like_count or 0,
+            "score": float(v.view_count),
             "position": offset + i + 1,
+            "prev_position": None,
+            "view_delta": None,
             "platform_video_id": v.platform_video_id,
             "category": v.category.value if v.category else None,
             "published_at": v.published_at.isoformat() if v.published_at else None,
@@ -453,7 +487,7 @@ async def get_charts(
         rank_basis = "view_count"
 
     _CHART_STALENESS: dict[str, timedelta] = {
-        "real":    timedelta(hours=6),
+        "real":    timedelta(hours=8),
         "daily":   timedelta(days=2),
         "weekly":  timedelta(days=8),
         "monthly": timedelta(days=35),

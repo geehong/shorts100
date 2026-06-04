@@ -34,12 +34,12 @@ celery_app.conf.update(
 
     # Beat 스케줄
     beat_schedule={
-        # ── Key1: 실시간(2h 창) — 짝수 시간 0분 ─────────────────────────────
-        # 0,2,4...22시: 최근 2시간 신규 TOP 100 → chart_type='real'
-        # Key1 소모: 200 units × 12회 = 2,400 units/일
+        # ── Key1: 실시간(4h 창) — 0,4,8,12,16,20시 ──────────────────────────
+        # 6회/일: 최근 4시간 신규 TOP 100 → chart_type='real' (GLOBAL 포함)
+        # Key1 소모: 200 units × 6회 = 1,200 units/일
         "collect-realtime": {
             "task": "app.crawlers.tasks.collect_realtime_shorts",
-            "schedule": crontab(hour="0,2,4,6,8,10,12,14,16,18,20,22", minute=0),
+            "schedule": crontab(hour="0,4,8,12,16,20", minute=0),
         },
         # ── Key1: 일간(24h 창) — 홀수 시간 0분 ──────────────────────────────
         # 1,3,5...23시: 최근 24시간 신규 TOP 100 → chart_type='daily'

@@ -435,14 +435,14 @@ async def _compute_global_rankings():
         m_l, s_l = get_stats(likes)
         m_c, s_c = get_stats(comments)
 
-        # 3. 점수 계산 — 글로벌 랭킹은 순수 인기도(decay 없음)
+        # 3. 점수 계산 — 글로벌 랭킹은 순수 인기도(decay 없음) + 언어 가중치
+        from app.services.ranking import global_lang_weight
         scored_videos = []
         for v in videos:
             vz = calculate_z_score(float(v.view_count), m_v, s_v)
             lz = calculate_z_score(float(v.like_count), m_l, s_l)
             cz = calculate_z_score(float(v.comment_count), m_c, s_c)
-            # decay=1.0 으로 고정해 Z-score 합산값만 사용
-            final_score = compute_final_score(vz, lz, cz, 1.0)
+            final_score = compute_final_score(vz, lz, cz, 1.0) * global_lang_weight(v)
             scored_videos.append((v, final_score))
 
         # 4. 정렬 (점수 내림차순)
@@ -642,13 +642,14 @@ async def _compute_category_rankings():
             rank_type_key = f"category:{cat_value}"
             prev_pos_map = prev_cat_pos_map.get(rank_type_key, {})
 
+            from app.services.ranking import global_lang_weight
             scored = []
             for v in cat_videos:
                 vz = calculate_z_score(float(v.view_count), m_v, s_v)
                 lz = calculate_z_score(float(v.like_count), m_l, s_l)
                 cz = calculate_z_score(float(v.comment_count), m_c, s_c)
                 decay = calculate_decay(v.published_at)
-                score = compute_final_score(vz, lz, cz, decay)
+                score = compute_final_score(vz, lz, cz, decay) * global_lang_weight(v)
                 scored.append((v, score))
 
             scored.sort(key=lambda x: x[1], reverse=True)
@@ -701,23 +702,26 @@ def _generate_chart_snapshot(chart_type: str, period_start: datetime, period_end
             for region in regions:
                 # 1. 대상 비디오 필터링 (지역 기여도 왜곡 보정 - 2025년 이후 발행 비디오 대상)
                 cutoff = datetime(2025, 1, 1, tzinfo=timezone.utc)
+                from app.models import VideoTrendingHistory
+                from app.services.ranking import apply_region_filter
                 if region == "GLOBAL":
+                    # GLOBAL: published_at 기준으로 기간 필터 → weekly/monthly/yearly 명확 차별화
                     stmt = (
                         select(Video).options(selectinload(Video.channel))
                         .where(Video.status == "active")
                         .where(Video.is_short == True)
-                        .where(Video.published_at >= cutoff)  # 퍼블리싱 기준 필터
+                        .where(Video.published_at >= period_start)
+                        .where(Video.published_at <= period_end)
                     )
                 else:
-                    from app.models import VideoTrendingHistory
-                    from app.services.ranking import apply_region_filter
+                    # 지역 차트: 해당 기간에 트렌딩 관측된 영상 + 언어 필터
                     stmt = (
                         select(Video)
                         .options(selectinload(Video.channel))
                         .join(VideoTrendingHistory)
                         .where(Video.status == "active")
                         .where(Video.is_short == True)
-                        .where(Video.published_at >= cutoff)  # 퍼블리싱 기준 필터
+                        .where(Video.published_at >= cutoff)
                         .where(VideoTrendingHistory.region == region)
                         .where(VideoTrendingHistory.observed_at >= period_start)
                         .where(VideoTrendingHistory.observed_at <= period_end)
@@ -770,7 +774,7 @@ def _generate_chart_snapshot(chart_type: str, period_start: datetime, period_end
                             if basis == "view_count":
                                 score = float(v.view_count)
                             elif basis == "view_delta":
-                                start_val = start_views.get(v.id, 0)
+                                start_val = start_views.get(v.id, v.view_count)
                                 score = float(max(0, v.view_count - start_val))
                             elif basis == "rising":
                                 score = compute_rising_score(v.view_count, v.like_count, v.published_at)
@@ -780,6 +784,9 @@ def _generate_chart_snapshot(chart_type: str, period_start: datetime, period_end
                                 cz = calculate_z_score(float(v.comment_count), m_c, s_c)
                                 decay = calculate_decay(v.published_at)
                                 score = compute_final_score(vz, lz, cz, decay)
+                                if region == "GLOBAL":
+                                    from app.services.ranking import global_lang_weight
+                                    score *= global_lang_weight(v)
                             scored_videos.append((v, score))
                         
                         # 정렬 및 순위 커트라인 적용
@@ -830,7 +837,7 @@ def _generate_chart_snapshot(chart_type: str, period_start: datetime, period_end
                             peak_pos = min(pos, old_peak) if old_peak is not None else pos
                             
                             weeks = prev_weeks_map.get(video.id, 0) + 1
-                            start_val = start_views.get(video.id, 0)
+                            start_val = start_views.get(video.id, video.view_count)
                             v_delta = max(0, video.view_count - start_val)
                             
                             entry = ChartEntry(
@@ -930,25 +937,28 @@ def _save_chart_entries_for_collection(
     region: str,
     now_utc: datetime,
 ) -> int:
-    """수집된 영상 목록으로 chart_entries 저장 (view_count 기준 정렬).
+    """수집된 영상 목록으로 chart_entries 저장 (4 rank_basis × 전체+카테고리별).
 
-    Returns: 저장된 row 수
+    - 언어 필터 없음: 수집 시 이미 지역별 분리됨
+    - category=None(전체) + 카테고리별 엔트리 모두 저장
+    Returns: 저장된 비디오 수
     """
+    import statistics as _stat_mod
     from app.models import Video, ChartEntry, VideoStat
     from sqlalchemy import delete as sa_delete
+    from app.services.ranking import (
+        calculate_z_score, calculate_decay,
+        compute_final_score, compute_rising_score,
+    )
 
-    from app.services.ranking import apply_region_filter
-
-    cutoff = period_start
+    # 수집된 ID 기준 조회 — 언어 필터 제거 (수집 시 지역 분리됨)
     stmt = (
         select(Video)
         .where(Video.platform_video_id.in_(all_ids))
         .where(Video.status == "active")
-        .where(Video.published_at >= cutoff)
+        .where(Video.published_at >= period_start)
+        .order_by(Video.view_count.desc())
     )
-    stmt = apply_region_filter(stmt, region)
-    stmt = stmt.order_by(Video.view_count.desc())
-
     videos = session.execute(stmt).scalars().all()
 
     if not videos:
@@ -956,7 +966,7 @@ def _save_chart_entries_for_collection(
 
     video_ids = [v.id for v in videos]
 
-    # 기간 시작 시점 view_count → view_delta 계산
+    # 기간 시작 시점 view_count (±30분 VideoStat → view_delta 계산용)
     start_stats = session.execute(
         select(VideoStat.video_id, VideoStat.view_count)
         .where(VideoStat.video_id.in_(video_ids))
@@ -969,29 +979,7 @@ def _save_chart_entries_for_collection(
         if row.video_id not in start_views:
             start_views[row.video_id] = row.view_count
 
-    # 이전 period_key를 사전식 순서 역순으로 조회 (가장 가까운 과거 차트 찾기)
-    prev_period_key = session.execute(
-        select(ChartEntry.period_key)
-        .where(ChartEntry.chart_type == chart_type)
-        .where(ChartEntry.region == region)
-        .where(ChartEntry.period_key < period_key)
-        .order_by(ChartEntry.period_key.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-
-    prev_pos_map: dict[int, int] = {}
-    if prev_period_key:
-        prev_rows = session.execute(
-            select(ChartEntry.video_id, ChartEntry.position)
-            .where(ChartEntry.chart_type == chart_type)
-            .where(ChartEntry.region == region)
-            .where(ChartEntry.period_key == prev_period_key)
-        ).all()
-        for row in prev_rows:
-            if row.video_id not in prev_pos_map:
-                prev_pos_map[row.video_id] = row.position
-
-    # 같은 period_key 기존 row 삭제 (재실행 시 중복 방지)
+    # 기존 해당 기간 row 전체 삭제
     session.execute(
         sa_delete(ChartEntry)
         .where(ChartEntry.chart_type == chart_type)
@@ -999,26 +987,99 @@ def _save_chart_entries_for_collection(
         .where(ChartEntry.region == region)
     )
 
-    for i, video in enumerate(videos):
-        pos = i + 1
-        start_val = start_views.get(video.id, video.view_count)
-        v_delta = max(0, video.view_count - start_val)
-        session.add(ChartEntry(
-            chart_type=chart_type,
-            period_key=period_key,
-            period_start=period_start,
-            period_end=period_end,
-            region=region,
-            category=None,
-            video_id=video.id,
-            rank_basis="view_count",
-            position=pos,
-            prev_position=prev_pos_map.get(video.id),
-            view_delta=v_delta if v_delta > 0 else None,
-            view_count=video.view_count,
-            like_count=video.like_count,
-            created_at=now_utc,
-        ))
+    def _gs(data: list) -> tuple[float, float]:
+        if len(data) < 2:
+            return (data[0] if data else 0.0), 0.0
+        return _stat_mod.mean(data), _stat_mod.stdev(data)
+
+    # 카테고리 그룹: None(전체) + 실제 존재하는 카테고리
+    by_cat: dict[str, list] = {}
+    for v in videos:
+        if v.category:
+            by_cat.setdefault(v.category.value, []).append(v)
+    cat_groups: list[tuple] = [(None, videos)] + [(cat, vids) for cat, vids in by_cat.items()]
+
+    for (category, cat_videos) in cat_groups:
+        if not cat_videos:
+            continue
+
+        views_arr    = [float(v.view_count) for v in cat_videos]
+        likes_arr    = [float(v.like_count or 0) for v in cat_videos]
+        comments_arr = [float(getattr(v, "comment_count", 0) or 0) for v in cat_videos]
+        m_v, s_v = _gs(views_arr)
+        m_l, s_l = _gs(likes_arr)
+        m_c, s_c = _gs(comments_arr)
+
+        for basis in ["view_count", "algo", "view_delta", "rising"]:
+            # rank_basis + category별 이전 period_key → prev_position
+            prev_pk = session.execute(
+                select(ChartEntry.period_key)
+                .where(ChartEntry.chart_type == chart_type)
+                .where(ChartEntry.region == region)
+                .where(ChartEntry.rank_basis == basis)
+                .where(ChartEntry.category == category)
+                .where(ChartEntry.period_key < period_key)
+                .order_by(ChartEntry.period_key.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+
+            prev_pos_map: dict[int, int] = {}
+            if prev_pk:
+                prev_rows = session.execute(
+                    select(ChartEntry.video_id, ChartEntry.position)
+                    .where(ChartEntry.chart_type == chart_type)
+                    .where(ChartEntry.region == region)
+                    .where(ChartEntry.rank_basis == basis)
+                    .where(ChartEntry.category == category)
+                    .where(ChartEntry.period_key == prev_pk)
+                ).all()
+                for row in prev_rows:
+                    prev_pos_map[row.video_id] = row.position
+
+            # 점수 계산 및 정렬
+            if basis == "view_count":
+                scored = [(v, float(v.view_count)) for v in cat_videos]
+            elif basis == "view_delta":
+                scored = [(v, float(max(0, v.view_count - start_views.get(v.id, v.view_count)))) for v in cat_videos]
+            elif basis == "rising":
+                scored = [(v, compute_rising_score(v.view_count, v.like_count or 0, v.published_at)) for v in cat_videos]
+            else:  # algo
+                from app.services.ranking import global_lang_weight
+                scored = []
+                for v in cat_videos:
+                    vz = calculate_z_score(float(v.view_count), m_v, s_v)
+                    lz = calculate_z_score(float(v.like_count or 0), m_l, s_l)
+                    cz = calculate_z_score(float(getattr(v, "comment_count", 0) or 0), m_c, s_c)
+                    decay = calculate_decay(v.published_at)
+                    score = compute_final_score(vz, lz, cz, decay)
+                    if region == "GLOBAL":
+                        score *= global_lang_weight(v)
+                    scored.append((v, score))
+
+            scored.sort(key=lambda x: x[1], reverse=True)
+
+            for i, (video, score) in enumerate(scored):
+                pos = i + 1
+                start_val = start_views.get(video.id, video.view_count)
+                v_delta = max(0, video.view_count - start_val)
+                session.add(ChartEntry(
+                    chart_type=chart_type,
+                    period_key=period_key,
+                    period_start=period_start,
+                    period_end=period_end,
+                    region=region,
+                    category=category,
+                    video_id=video.id,
+                    rank_basis=basis,
+                    position=pos,
+                    prev_position=prev_pos_map.get(video.id),
+                    view_delta=v_delta if v_delta > 0 else None,
+                    view_count=video.view_count,
+                    like_count=video.like_count or 0,
+                    zscore=score if basis == "algo" else None,
+                    velocity=score if basis == "rising" else None,
+                    created_at=now_utc,
+                ))
 
     return len(videos)
 
@@ -1100,12 +1161,12 @@ def _upsert_video_batch(
     return collected, updated
 
 
-# ── Key1: 실시간(2h) 수집 ───────────────────────────────────────────────────────
+# ── Key1: 실시간(4h) 수집 ───────────────────────────────────────────────────────
 
 @celery_app.task(name="app.crawlers.tasks.collect_realtime_shorts")
 def collect_realtime_shorts():
-    """[Key1] 짝수 시간마다 최근 2시간 내 신규 TOP 100 수집 → chart_type='real' 저장.
-    KR+US+JP 고정 + 로테이션 1개 = 4지역 순차 수집 (800 units/호출).
+    """[Key1] 4시간마다 최근 4시간 내 신규 TOP 100 수집 → chart_type='real' 저장.
+    KR+US+JP 고정 + 로테이션 1개 = 4지역 순차 수집 후 GLOBAL 합산.
     """
     try:
         client = YouTubeClient(api_key=settings.youtube_api_keys)
@@ -1113,13 +1174,15 @@ def collect_realtime_shorts():
         return {"status": "error", "message": str(e)}
 
     now_utc = datetime.now(timezone.utc)
-    period_start = now_utc - timedelta(hours=2)
-    # API 인덱싱 지연(최대 ~2h) 보정: 6시간 버퍼로 넓게 검색 후 Python에서 재필터링
-    search_published_after = now_utc - timedelta(hours=6)
+    period_start = now_utc - timedelta(hours=4)
+    search_published_after = now_utc - timedelta(hours=8)
     kst_hour = (now_utc + timedelta(hours=9)).strftime("%Y-%m-%dT%H")
     regions = get_collection_regions()
 
     total_collected = total_updated = total_chart = 0
+    all_global_ids: list[str] = []
+    seen_global: set[str] = set()
+
     for region in regions:
         video_items, all_ids = _collect_two_pages(client, region, search_published_after)
         if not all_ids:
@@ -1135,6 +1198,11 @@ def collect_realtime_shorts():
         if not all_ids:
             continue
 
+        for vid in all_ids:
+            if vid not in seen_global:
+                all_global_ids.append(vid)
+                seen_global.add(vid)
+
         with SyncSession() as session:
             try:
                 c, u = _upsert_video_batch(session, video_items, all_ids, client, region, now_utc)
@@ -1147,6 +1215,20 @@ def collect_realtime_shorts():
             except Exception:
                 session.rollback()
                 logger.exception("[collect_realtime_shorts] region=%s 에러", region)
+
+    # 전 지역 합산 GLOBAL real 차트 생성
+    if all_global_ids:
+        with SyncSession() as session:
+            try:
+                cs = _save_chart_entries_for_collection(
+                    session, all_global_ids, "real", kst_hour,
+                    period_start, now_utc, "GLOBAL", now_utc,
+                )
+                session.commit()
+                total_chart += cs
+            except Exception:
+                session.rollback()
+                logger.exception("[collect_realtime_shorts] GLOBAL 차트 에러")
 
     compute_global_rankings.delay()
     compute_rising_rankings.delay()
@@ -1177,6 +1259,9 @@ def collect_daily_shorts():
     regions = get_collection_regions()
 
     total_collected = total_updated = total_chart = 0
+    all_global_ids: list[str] = []
+    seen_global: set[str] = set()
+
     for region in regions:
         video_items, all_ids = _collect_two_pages(client, region, search_published_after)
         if not all_ids:
@@ -1192,6 +1277,11 @@ def collect_daily_shorts():
         if not all_ids:
             continue
 
+        for vid in all_ids:
+            if vid not in seen_global:
+                all_global_ids.append(vid)
+                seen_global.add(vid)
+
         with SyncSession() as session:
             try:
                 c, u = _upsert_video_batch(session, video_items, all_ids, client, region, now_utc)
@@ -1204,6 +1294,20 @@ def collect_daily_shorts():
             except Exception:
                 session.rollback()
                 logger.exception("[collect_daily_shorts] region=%s 에러", region)
+
+    # 전 지역 합산 GLOBAL daily 차트 생성
+    if all_global_ids:
+        with SyncSession() as session:
+            try:
+                cs = _save_chart_entries_for_collection(
+                    session, all_global_ids, "daily", kst_hour,
+                    period_start, now_utc, "GLOBAL", now_utc,
+                )
+                session.commit()
+                total_chart += cs
+            except Exception:
+                session.rollback()
+                logger.exception("[collect_daily_shorts] GLOBAL 차트 에러")
 
     compute_global_rankings.delay()
     compute_category_rankings.delay()

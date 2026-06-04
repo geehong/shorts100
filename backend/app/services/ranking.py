@@ -69,6 +69,36 @@ def compute_rising_score(
     return velocity * engagement_boost * freshness
 
 
+_GLOBAL_LANG_WEIGHT: dict[str, float] = {
+    "en": 1.00, "ko": 0.85, "ja": 0.70, "fr": 0.55, "es": 0.45,
+    "pt": 0.35, "hi": 0.12, "id": 0.12, "ur": 0.10, "bn": 0.10,
+    "ta": 0.10, "te": 0.10, "mr": 0.10,
+}
+_GLOBAL_LANG_WEIGHT_DEFAULT = 0.20
+
+
+def global_lang_weight(video) -> float:
+    """GLOBAL 차트용 언어 가중치.
+
+    - 제목 내 비라틴 스크립트로 언어 감지 (힌디·벵골·드라비다·아랍·태국 등)
+    - default_language en-IN 명시 태그 감지
+    - 그 외는 _GLOBAL_LANG_WEIGHT 테이블 or 기본값 0.20
+    """
+    import re
+    lang = (video.default_language or "")[:2].lower()
+    full_lang = (video.default_language or "").lower()
+    title = video.title or ""
+
+    if re.search(r'[ऀ-ॿ]', title): return 0.12   # 데바나가리 (힌디 등)
+    if re.search(r'[ঀ-৿]', title): return 0.10    # 벵골어
+    if re.search(r'[஀-௿ఀ-౿ಀ-೿ഀ-ൿ]', title): return 0.10  # 타밀/텔루구/칸나다/말라얄람
+    if re.search(r'[؀-ۿ]', title): return 0.10    # 아랍어/우르두
+    if re.search(r'[฀-๿က-႟]', title): return 0.15  # 태국어/미얀마어
+    if full_lang.startswith("en-in"):              # 인도 영어 명시 태그
+        return 0.12
+    return _GLOBAL_LANG_WEIGHT.get(lang, _GLOBAL_LANG_WEIGHT_DEFAULT)
+
+
 def apply_region_filter(query, region_code: str):
     """지정된 지역(region_code)에 맞는 동영상 필터를 적용한다.
     
