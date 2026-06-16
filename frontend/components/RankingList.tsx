@@ -839,7 +839,7 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
       <div className={`transition-all duration-300 pointer-events-none ${headerVisible ? "h-[282px]" : "h-[116.5px]"}`} />
 
       {/* ══ 우측 상단 정렬 기준 스위처 (사이드바 스타일, 투명도 50%) ══ */}
-      <div className={`fixed right-3 top-48 z-30 flex flex-col items-center gap-2 transition-all duration-300 ${isSearching ? "opacity-10 pointer-events-none filter blur-[0.5px]" : "opacity-50 hover:opacity-100"}`}>
+      <div className={`fixed right-3 min-[696px]:right-[calc(50%-336px+12px)] top-48 z-30 flex flex-col items-center gap-2 transition-all duration-300 ${isSearching ? "opacity-10 pointer-events-none filter blur-[0.5px]" : "opacity-50 hover:opacity-100"}`}>
         {[
           { key: "algo",       icon: "🏆" },
           { key: "view_count", icon: "👁" },
@@ -862,7 +862,7 @@ export default function RankingList({ initialItems, rankType }: RankingListProps
       </div>
 
       {/* ══ 우측 고정 사이드바 ══ */}
-      <div className="fixed right-3 bottom-20 z-30 flex flex-col items-center gap-2">
+      <div className="fixed right-3 min-[696px]:right-[calc(50%-336px+12px)] bottom-20 z-30 flex flex-col items-center gap-2">
         {SIDE_CATS.map(c => (
           <button key={c.val} onClick={() => setCat(cat === c.val ? "" : c.val)}
             disabled={isSearching}
@@ -1194,18 +1194,25 @@ function BoxView({ items, lang }: { items: RankingItem[]; lang: Lang }) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
+  const [cols, setCols] = useState(2);
 
   useEffect(() => {
     if (containerRef.current) {
       setScrollMargin(containerRef.current.offsetTop);
     }
+    const updateCols = () => {
+      setCols(window.innerWidth >= 640 ? 3 : 2);
+    };
+    updateCols();
+    window.addEventListener("resize", updateCols);
+    return () => window.removeEventListener("resize", updateCols);
   }, []);
 
-  const rowCount = Math.ceil(items.length / 2);
+  const rowCount = Math.ceil(items.length / cols);
 
   const virtualizer = useWindowVirtualizer({
     count: rowCount,
-    estimateSize: () => 320,
+    estimateSize: () => cols === 3 ? 400 : 320,
     overscan: 6,
     scrollMargin,
   });
@@ -1223,8 +1230,7 @@ function BoxView({ items, lang }: { items: RankingItem[]; lang: Lang }) {
       >
         {virtualItems.map(virtualItem => {
           const rowIndex = virtualItem.index;
-          const leftItem = items[rowIndex * 2];
-          const rightItem = items[rowIndex * 2 + 1];
+          const rowItems = Array.from({ length: cols }).map((_, i) => items[rowIndex * cols + i]);
 
           return (
             <div
@@ -1240,9 +1246,9 @@ function BoxView({ items, lang }: { items: RankingItem[]; lang: Lang }) {
                 paddingBottom: "8px",
               }}
             >
-              <div className="grid grid-cols-2 gap-2">
-                {[leftItem, rightItem].map((item, idx) => {
-                  if (!item) return <div key={idx} className="aspect-[9/16] opacity-0" />;
+              <div className={`grid gap-2 ${cols === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+                {rowItems.map((item, idx) => {
+                  if (!item) return <div key={idx} className="aspect-[9/16] opacity-0 pointer-events-none" />;
 
                   const handleCardClick = (e: React.MouseEvent) => {
                     e.preventDefault();
