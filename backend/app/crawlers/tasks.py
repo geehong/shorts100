@@ -777,7 +777,14 @@ def _generate_chart_snapshot(chart_type: str, period_start: datetime, period_end
                                 start_val = start_views.get(v.id, v.view_count)
                                 score = float(max(0, v.view_count - start_val))
                             elif basis == "rising":
-                                score = compute_rising_score(v.view_count, v.like_count, v.published_at)
+                                hl = 12.0
+                                if chart_type == "weekly":
+                                    hl = 84.0
+                                elif chart_type == "monthly":
+                                    hl = 360.0
+                                elif chart_type == "yearly":
+                                    hl = 4380.0
+                                score = compute_rising_score(v.view_count, v.like_count, v.published_at, freshness_half_life_hours=hl)
                             else:  # algo
                                 vz = calculate_z_score(float(v.view_count), m_v, s_v)
                                 lz = calculate_z_score(float(v.like_count), m_l, s_l)

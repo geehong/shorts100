@@ -343,7 +343,14 @@ async def _get_ranking_list(
         videos = (await db.execute(query)).scalars().all()
 
         if rank_basis == "rising" and videos:
-            scored = [(v, compute_rising_score(v.view_count, v.like_count or 0, v.published_at) * _lang_weight(v)) for v in videos]
+            hl = 12.0
+            if period == "weekly":
+                hl = 84.0
+            elif period == "monthly":
+                hl = 360.0
+            elif period == "yearly":
+                hl = 4380.0
+            scored = [(v, compute_rising_score(v.view_count, v.like_count or 0, v.published_at, freshness_half_life_hours=hl) * _lang_weight(v)) for v in videos]
             scored.sort(key=lambda x: x[1], reverse=True)
             return [
                 {
