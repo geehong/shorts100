@@ -62,7 +62,7 @@ services:
     networks:
       shorts100_network:
       shared-network:
-    mem_limit: 512m
+    mem_limit: 1g
     restart: unless-stopped
 
   celery-beat:
