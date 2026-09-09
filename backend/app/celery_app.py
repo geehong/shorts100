@@ -84,5 +84,10 @@ celery_app.conf.update(
             "task": "app.crawlers.tasks.daily_chart_snapshot",
             "schedule": crontab(hour=0, minute=0),
         },
+        # ── DB 파티션 자동 생성 (매일 01:00) ─────────────────────────────────
+        "ensure-partitions": {
+            "task": "app.crawlers.tasks.ensure_partitions",
+            "schedule": crontab(hour=1, minute=0),
+        },
     },
 )

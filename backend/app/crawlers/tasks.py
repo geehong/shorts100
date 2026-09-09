@@ -1698,3 +1698,45 @@ def daily_chart_snapshot():
 
     return f"Charts (daily/weekly/monthly/yearly) created for {kst_today}"
 
+
+@celery_app.task(name="app.crawlers.tasks.ensure_partitions")
+def ensure_partitions():
+    """video_stats 및 user_events 테이블의 미래 파티션(현재 달부터 향후 12개월) 및 DEFAULT 파티션을 자동 생성한다."""
+    import sqlalchemy as sa
+    with SyncSession() as session:
+        try:
+            session.execute(sa.text("CREATE TABLE IF NOT EXISTS video_stats_default PARTITION OF video_stats DEFAULT;"))
+            session.execute(sa.text("CREATE TABLE IF NOT EXISTS user_events_default PARTITION OF user_events DEFAULT;"))
+
+            now = datetime.now(timezone.utc)
+            current_year = now.year
+            current_month = now.month
+
+            for i in range(12):
+                y = current_year + ((current_month - 1 + i) // 12)
+                m = ((current_month - 1 + i) % 12) + 1
+
+                ny = y if m < 12 else y + 1
+                nm = m + 1 if m < 12 else 1
+
+                m_str = f"{m:02d}"
+                nm_str = f"{nm:02d}"
+
+                start_date = f"{y}-{m_str}-01 00:00:00+09"
+                end_date = f"{ny}-{nm_str}-01 00:00:00+09"
+
+                vs_table = f"video_stats_y{y}m{m_str}"
+                ue_table = f"user_events_y{y}m{m_str}"
+
+                session.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {vs_table} PARTITION OF video_stats FOR VALUES FROM ('{start_date}') TO ('{end_date}');"))
+                session.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {ue_table} PARTITION OF user_events FOR VALUES FROM ('{start_date}') TO ('{end_date}');"))
+
+            session.commit()
+            logger.info("파티션 자동 확인/생성 완료.")
+            return "Partitions checked and ensured."
+        except Exception as e:
+            session.rollback()
+            logger.error("파티션 생성 실패: %s", e)
+            raise e
+
+
